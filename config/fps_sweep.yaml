@@ -1,0 +1,61 @@
+# Full application-throughput (FPS vs. tenant density) sweep  -> fig/fps.pdf.
+#
+# For each density N: provision N tenants, deploy the top-50 corpus, then run
+# `rounds` measurement rounds. Each round starts one app per tenant (random
+# pattern = distinct app per tenant, avoiding the shared-framework same-package
+# process collision), drives it with monkey, and derives FPS from dumpsys
+# gfxinfo. We report mean FPS across rendering tenants, one row per round.
+#
+# trials=1 + rounds>1 is deliberate: a trial re-provisions and re-deploys (the
+# ~5-min physical install), whereas rounds reuse the deployment and only restart
+# apps -- so rounds are the cheap repetition knob (the paper's 100 rounds map
+# here). autoscale stops after the first density that fails (too few tenants
+# render or provisioning fails) and reports the max sustainable density.
+#
+# NOTE ON HARDWARE: FPS actually renders apps, so the GPU saturates far earlier
+# than the (idle) provision/deploy ceiling. The paper (RTX A4000, 16 GiB) hit
+# 100% GPU at >=16 tenants and sustained FPS to 84; on a 6 GiB GTX 1660 Ti
+# expect the wall in the ~8-16 range. The qualitative trend (FPS holds, then
+# degrades gracefully as the GPU saturates -- no memory cliff) still holds.
+
+paths:
+  base_dir: ${BASE_DIR}
+  bliss_img_path: ${GUEST_IMG_PATH}
+  scalebench_dir: ${BASE_DIR}/scalebench
+
+adb:
+  start_port: 5555
+  monitor_port: 55555
+  bridge_port: 5555
+
+mcon:
+  launcher_timeout_s: 120        # fail fast: a stuck tenant bails in 2 min
+
+sweep:
+  densities: [1, 2, 4, 8, 16, 32]
+  trials: 1                       # re-provision is expensive; use `rounds` to repeat
+  autoscale: true                # stop after the first density that fails
+
+experiments:
+  deploy:
+    apps_dir: ${BASE_DIR}/scalebench/apps  # corpus (shared with fps below)
+    max_apps: null
+    map_concurrency: 1            # serial mapping (see deploy_sweep.yaml)
+  fps:
+    pattern: random               # distinct app per tenant (round-robin collapses on shared build)
+    measure_window_s: 300         # paper: 5-min steady-state window
+    startup_s: 8                  # let each app come up before the window
+    rounds: 3                     # measurement repetitions per density (paper: 100; reduced for AE)
+    drive_input: true             # drive each app with monkey (touch/motion)
+    seed: 0                       # reproducible random assignment
+    min_frames: 30                # instances rendering fewer frames are excluded (noise)
+    max_apps: null                # null = full corpus
+    apps_dir: ${BASE_DIR}/scalebench/apps
+    provision_interval_s: 0.5     # pacing while bringing tenants up (not measured)
+    boot_timeout_s: 180
+    metric_source: gfxinfo
+
+output:
+  runs_dir: data/runs
+  reference_dir: data/reference
+  figures_dir: data/figures

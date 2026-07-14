@@ -1,0 +1,94 @@
+# Small "smoke" config for live shakeout of the drivers (NOT for real results).
+# Tiny densities, one trial, a couple of apps, short FPS window. Use with:
+#   python -m mconbench run provision_concurrent --system <sys> --config config/smoke.yaml
+#   python -m mconbench run deploy               --system <sys> --config config/smoke.yaml
+#   python -m mconbench run fps                  --system <sys> --config config/smoke.yaml
+
+paths:
+  base_dir: ${BASE_DIR}
+  bliss_img_path: ${GUEST_IMG_PATH}
+  scalebench_dir: ${BASE_DIR}/scalebench
+
+adb:
+  start_port: 5555
+  monitor_port: 55555
+  bridge_port: 5555
+
+mcon:
+  launcher_timeout_s: 600
+
+sweep:
+  densities: [1, 2]        # tiny
+  trials: 1
+  autoscale: false         # don't bisect; keep the smoke short and bounded
+  reset_between_trials: false
+
+experiments:
+  provision_concurrent:
+    launcher_process: com.android.launcher3
+    interval_s: 1.0
+    boot_timeout_s: 180
+    prime_warm: auto
+    reset_before_prime: true
+  deploy:
+    apps_dir: ${BASE_DIR}/scalebench/apps
+    max_apps: 2            # only install 2 apps for the smoke
+    provision_interval_s: 0.5
+    boot_timeout_s: 180
+  fps:
+    pattern: random
+    measure_window_s: 20   # short window (real runs use 300)
+    startup_s: 8
+    rounds: 1              # single round
+    drive_input: true
+    seed: 0
+    min_frames: 10
+    max_apps: 2
+    apps_dir: ${BASE_DIR}/scalebench/apps
+    provision_interval_s: 0.5
+    boot_timeout_s: 180
+
+# Baseline connection params (same as default.yaml) so the smoke config drives
+# any system. Only the one selected with --system is used.
+systems:
+  mcon: { enabled: true }
+  vsoc:
+    enabled: true
+    base_adb_port: 5555
+    base_monitor_port: 60000
+    ready_interval_s: 2.0
+    wait_launcher: true
+    launcher_process: com.android.launcher3
+  gae:
+    enabled: true
+    base_adb_port: 5555
+    base_console_port: 55554
+    avd_prefix: avd-batch
+    ready_interval_s: 2.0
+    wait_launcher: true
+    launcher_process: com.android.launcher3 com.google.android.apps.nexuslauncher com.android.launcher
+    no_window: true
+  redroid:
+    enabled: true
+    base_adb_port: 5555
+    ready_interval_s: 2.0
+    wait_launcher: true
+    launcher_process: com.android.launcher3
+    ssh_host: localhost
+    ssh_port: 2222
+    ssh_user: redroid
+    remote_dir: /home/redroid
+    init_script: ./init.sh
+    manage_vm: false
+  anbox:
+    enabled: true
+    backend: local
+    vm_name: anbox
+    ready_interval_s: 3.0
+    wait_launcher: false
+    manage_vm: false
+
+output:
+  runs_dir: data/runs
+  reference_dir: data/reference
+  figures_dir: data/figures

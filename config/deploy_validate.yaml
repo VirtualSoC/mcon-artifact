@@ -1,0 +1,39 @@
+# Quick VALIDATION of the deploy map-concurrency fix (not a full sweep).
+#
+# Re-runs deploy at a few densities with serial mapping (map_concurrency=1) to
+# confirm map_s no longer blows up super-linearly. Compare against the pre-fix
+# run (data/runs/20260711-160847/) where parallel mapping gave map_s ~63s@N=8
+# and ~1500s@N=16. With the fix, map_s should stay in the tens of seconds and
+# total_s should track the ~O(1) trend (dominated by the constant physical
+# install-once phase).
+
+paths:
+  base_dir: ${BASE_DIR}
+  bliss_img_path: ${GUEST_IMG_PATH}
+  scalebench_dir: ${BASE_DIR}/scalebench
+
+adb:
+  start_port: 5555
+  monitor_port: 55555
+  bridge_port: 5555
+
+mcon:
+  launcher_timeout_s: 120
+
+sweep:
+  densities: [1, 8, 16]
+  trials: 1
+  autoscale: true
+
+experiments:
+  deploy:
+    apps_dir: ${BASE_DIR}/scalebench/apps
+    max_apps: null
+    provision_interval_s: 0.5
+    boot_timeout_s: 180
+    map_concurrency: 1        # the fix under test (serial mapping)
+
+output:
+  runs_dir: data/runs
+  reference_dir: data/reference
+  figures_dir: data/figures

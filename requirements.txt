@@ -1,0 +1,4 @@
+# MCon AE harness runtime dependencies.
+# Python 3.10+ recommended (tested on 3.12).
+PyYAML>=6.0        # config loader (mconbench/config.py)
+matplotlib>=3.8    # figure regeneration (mconbench/plots/); pulls in numpy

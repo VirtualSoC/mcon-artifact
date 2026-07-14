@@ -1,0 +1,46 @@
+# Quick VALIDATION of the FPS permission-grant fix at a REALISTIC window.
+# Short smoke windows (20s) are dominated by cold-start + grant latency and
+# under-report rendering; this uses a 120s window (still << the 300s full run)
+# to confirm most tenants render once first-run permission dialogs are gone.
+# max_apps is trimmed so deploy is fast.
+
+paths:
+  base_dir: ${BASE_DIR}
+  bliss_img_path: ${GUEST_IMG_PATH}
+  scalebench_dir: ${BASE_DIR}/scalebench
+
+adb:
+  start_port: 5555
+  monitor_port: 55555
+  bridge_port: 5555
+
+mcon:
+  launcher_timeout_s: 120
+
+sweep:
+  densities: [2, 4]
+  trials: 1
+  autoscale: true
+
+experiments:
+  deploy:
+    apps_dir: ${BASE_DIR}/scalebench/apps
+    max_apps: 12
+    map_concurrency: 1
+  fps:
+    pattern: random
+    measure_window_s: 120
+    startup_s: 15
+    rounds: 1
+    drive_input: true
+    seed: 0
+    min_frames: 30
+    max_apps: 12
+    apps_dir: ${BASE_DIR}/scalebench/apps
+    provision_interval_s: 0.5
+    boot_timeout_s: 180
+
+output:
+  runs_dir: data/runs
+  reference_dir: data/reference
+  figures_dir: data/figures

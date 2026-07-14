@@ -1,0 +1,54 @@
+# Lightweight config for VERIFYING the provisioning experiment end-to-end.
+# Small densities + a single trial so a run completes in minutes and surfaces
+# failures fast (short launcher timeout). Use config/default.yaml for the real
+# paper sweep. See config/default.yaml for the meaning of each key.
+
+paths:
+  base_dir: ${BASE_DIR}
+  bliss_img_path: ${GUEST_IMG_PATH}
+  scalebench_dir: ${BASE_DIR}/scalebench
+
+adb:
+  start_port: 5555
+  monitor_port: 55555
+  bridge_port: 5555
+
+mcon:
+  launcher_timeout_s: 120        # short: a stuck tenant fails fast instead of hanging 10 min
+
+sweep:
+  densities: [1, 2, 4]
+  trials: 1
+  autoscale: true
+  reset_between_trials: false
+
+experiments:
+  provision_concurrent:
+    launcher_process: com.android.launcher3
+    ready_timeout_s: 120
+    interval_s: 1.0
+    boot_timeout_s: 180
+    prime_warm: auto             # warm pool = max(densities)+1 framework namespaces
+    reset_before_prime: true     # start from a clean userdata image
+  deploy:
+    apps_dir: ${BASE_DIR}/scalebench/apps
+    max_apps: 3                  # only a few apps so a verify run is quick
+    provision_interval_s: 0.5
+    boot_timeout_s: 180
+  fps:
+    pattern: random              # distinct app per tenant (avoids same-pkg collision)
+    measure_window_s: 20         # short window: prove the pipeline, not steady-state
+    startup_s: 8
+    rounds: 2
+    drive_input: true
+    seed: 0
+    min_frames: 30
+    max_apps: 6                  # >= max density so each tenant gets a distinct app
+    apps_dir: ${BASE_DIR}/scalebench/apps
+    provision_interval_s: 0.5
+    boot_timeout_s: 180
+
+output:
+  runs_dir: data/runs
+  reference_dir: data/reference
+  figures_dir: data/figures

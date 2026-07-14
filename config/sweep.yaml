@@ -1,0 +1,43 @@
+# Full provisioning sweep (fig/container_boot_time.pdf).
+#
+# Same as default.yaml's provisioning settings, but with a fail-fast launcher
+# timeout so that densities beyond the GPU's headroom bail out quickly instead
+# of hanging ~10 min per stuck tenant. autoscale stops the sweep after the first
+# density that fails all/most trials, so the full [1..64] list is safe to leave.
+#
+# NOTE ON HARDWARE: the paper used an RTX A4000 (16 GiB) and reached ~84 tenants.
+# On a 6 GiB GPU expect the wall much earlier (max_density in the 8-32 range);
+# the qualitative trend (sub-second per-tenant provisioning) still holds.
+
+paths:
+  base_dir: ${BASE_DIR}
+  bliss_img_path: ${GUEST_IMG_PATH}
+  scalebench_dir: ${BASE_DIR}/scalebench
+
+adb:
+  start_port: 5555
+  monitor_port: 55555
+  bridge_port: 5555
+
+mcon:
+  launcher_timeout_s: 120        # fail fast: a stuck tenant bails in 2 min, not 10
+
+sweep:
+  densities: [1, 2, 4, 8, 16, 32, 64]
+  trials: 5                      # paper repeats each point 5x
+  autoscale: true                # stop after the first density that fails
+  reset_between_trials: false    # prime the warm pool once, keep it across trials
+
+experiments:
+  provision_concurrent:
+    launcher_process: com.android.launcher3
+    ready_timeout_s: 120
+    interval_s: 1.0              # seconds between successive provision requests
+    boot_timeout_s: 180
+    prime_warm: auto             # warm pool = max(densities)+1 framework namespaces
+    reset_before_prime: true     # start from a clean userdata image (reproducible)
+
+output:
+  runs_dir: data/runs
+  reference_dir: data/reference
+  figures_dir: data/figures

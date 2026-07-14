@@ -1,0 +1,137 @@
+# Default configuration for the MCon reproduction harness.
+#
+# ${VAR} tokens are expanded from the environment by the config loader
+# (see env.example). Paths may be absolute or relative to the vsoc tree root.
+#
+# NOTE ON HARDWARE: the paper used an RTX A4000 (16 GiB). On smaller GPUs
+# (e.g. RTX 1660 Ti, 6 GiB) the *absolute* max density and FPS will be lower;
+# the qualitative trends (MCon >> baselines) still hold. Lower the densities
+# below to match your GPU headroom.
+
+paths:
+  base_dir: ${BASE_DIR}                 # vsoc tree root (has bin/qemu, img/, scalebench/)
+  bliss_img_path: ${GUEST_IMG_PATH}     # default: ${BASE_DIR}/img/bliss
+  scalebench_dir: ${BASE_DIR}/scalebench
+
+adb:
+  start_port: 5555                      # first adb bridge port; instance i -> start_port+i
+  monitor_port: 55555                   # QEMU monitor (telnet) for `vsoc container new`
+  bridge_port: 5555
+
+mcon:
+  launcher_timeout_s: 600               # per-tenant readiness wait (only elapses on failure)
+
+# Density sweep. Doubling until failure, then the harness can binary-search the
+# crash point (see autoscale). Trim the tail for weaker GPUs.
+sweep:
+  densities: [1, 2, 4, 8, 16, 32, 64]
+  trials: 5                             # paper repeats each point 5x
+  autoscale: true                       # after first failed density, bisect the max
+  reset_between_trials: false           # keep the primed warm pool across trials
+
+experiments:
+  provision_concurrent:
+    launcher_process: com.android.launcher3
+    ready_timeout_s: 600                # boot_completed=1 AND launcher started
+    interval_s: 1.0                     # seconds between successive provision requests
+    boot_timeout_s: 180                 # max wait for the root instance to boot
+    prime_warm: auto                    # pre-create the namespace pool (auto = max density + 1)
+    reset_before_prime: true            # restore a clean userdata before priming (reproducible)
+  provision_under_load:
+    bg_densities: [0, 8, 16, 32, 64]    # active tenants while timing 1 new alloc
+  deploy:
+    apps_dir: ${BASE_DIR}/scalebench/apps  # top-50 APKs/XAPKs on disk (not ram-staged)
+    max_apps: null                      # null = all apps; set small (e.g. 5) for quick checks
+    provision_interval_s: 0.5           # pacing while bringing tenants up (NOT the measured metric)
+    boot_timeout_s: 180
+    # MCon deploys by installing each app ONCE on user 0, then logically mapping it
+    # into each tenant via `pm install-existing` (near-O(1)); tenants map in parallel.
+    # Each density resets userdata + re-warms so apps start absent (needed for the
+    # user-0 package-name diff to be correct).
+  fps:
+    pattern: random                     # random (distinct app/tenant) | round-robin
+    measure_window_s: 300               # paper: 5 min; use ~60 for kick-the-tires
+    startup_s: 8                        # let each app come up before the window starts
+    rounds: 5                           # paper: 100 back-to-back; lower for AE
+    drive_input: true                   # drive each app with `monkey` (touch/motion)
+    seed: 0                             # rng seed for the random pattern (reproducible)
+    min_frames: 30                      # instances rendering fewer frames are excluded (noise)
+    max_apps: null                      # null = full corpus; set small for quick checks
+    apps_dir: ${BASE_DIR}/scalebench/apps  # defaults to the deploy corpus if unset
+    provision_interval_s: 0.5           # pacing while bringing tenants up (not measured)
+    boot_timeout_s: 180
+    metric_source: gfxinfo              # dumpsys gfxinfo -> frame-time histogram -> FPS
+  warmpool:
+    profiles: [1, 2, 5, 10, 50, 100, 500, 1000]
+    concurrency: 32
+    pool_size: 60                       # warm instances baselines can hold
+    zipf_alpha: 1.0                     # profile popularity (market-share) skew
+    # HOW a per-tenant device profile is applied at request time is an OPEN
+    # question (see README > Warm pool). Fill `profile_apply` once decided.
+    profile_apply: null                 # e.g. build_props | display_options | ...
+
+# Which systems to drive. MCon is first-class; baselines are one-instance-per-
+# tenant and select their own connection params here. Pick the system with
+# `--system <name>` on the CLI. `enabled` documents readiness of each driver.
+systems:
+  mcon:    { enabled: true }
+  # vSoC: local QEMU per tenant via platform/vsoc.sh (stride-1 adb ports).
+  vsoc:
+    enabled: true
+    base_adb_port: 5555          # instance i -> localhost:(base_adb_port + i)
+    base_monitor_port: 60000     # QEMU monitor base (pass-through to vsoc.sh)
+    ready_interval_s: 2.0        # readiness poll interval (per-serial getprop)
+    wait_launcher: true          # require launcher process, not just boot_completed
+    launcher_process: com.android.launcher3
+  # Redroid: Docker containers inside an outer QEMU VM, driven over SSH. The
+  # outer VM must be reachable at ssh_host:ssh_port (start it first, or set
+  # manage_vm + vm_launch_cmd). Containers are forwarded to the host as
+  # localhost:<adb_port> (stride 1). SSH password comes from $REDROID_SSH_PASS
+  # (never commit secrets); key-based auth is used if it is unset.
+  redroid:
+    enabled: true
+    base_adb_port: 5555          # container i -> localhost:(base_adb_port + i)
+    ready_interval_s: 2.0
+    wait_launcher: true
+    launcher_process: com.android.launcher3
+    ssh_host: localhost          # or $REDROID_SSH_HOST
+    ssh_port: 2222               # or $REDROID_SSH_PORT
+    ssh_user: redroid            # or $REDROID_SSH_USER
+    remote_dir: /home/redroid    # where init.sh lives inside the VM
+    init_script: ./init.sh       # exposes `run <count>` and `stop`
+    ssh_timeout_s: 30
+    manage_vm: false             # true -> driver starts the outer VM via vm_launch_cmd
+    vm_launch_cmd: ""            # e.g. "bash platform/redroid.sh"
+    vm_boot_timeout_s: 300       # wait for VM SSH after launch
+  # Anbox Cloud: amc Android containers through a local bare-metal appliance by
+  # default (set backend=multipass for the older VM setup). adb ports are assigned
+  # dynamically by the gateway, so tenants are DISCOVERED from `adb devices`
+  # (127.0.0.1:*), not computed.
+  anbox:
+    enabled: true
+    backend: local               # local | multipass
+    vm_name: anbox               # only used when backend=multipass
+    control_script: ""           # default: <scalebench>/platform/anbox_test.sh
+    ready_interval_s: 3.0
+    wait_launcher: false         # Anbox has no launcher3; use boot_completed only
+    launcher_process: ""        # unused when wait_launcher=false
+    manage_vm: false             # multipass only: start <vm_name> if not running
+    vm_boot_timeout_s: 300
+  # GAE (Google Android Emulator): AVDs via platform/avd.sh. adb port stride 2
+  # (console+adb per instance), addressed as localhost:<adb_port> like vSoC.
+  gae:
+    enabled: true
+    base_adb_port: 5555          # emulator i -> localhost:(base_adb_port + 2*i)
+    base_console_port: 55554     # emulator console base (pass-through to avd.sh)
+    avd_prefix: avd-batch        # AVD name prefix (rm scope: <prefix>-1..N)
+    ready_interval_s: 2.0
+    wait_launcher: true
+    # GAE images ship different launchers; accept any of these (space/comma list).
+    launcher_process: com.android.launcher3 com.google.android.apps.nexuslauncher com.android.launcher
+    no_window: true              # headless (render offscreen, matching the paper)
+    sdk_root: ""                  # optional ANDROID_SDK_ROOT; empty = ~/Android/Sdk
+
+output:
+  runs_dir: data/runs                   # fresh measurement runs (git-ignored)
+  reference_dir: data/reference         # bundled canonical CSVs (committed)
+  figures_dir: data/figures             # bundled reference PDFs (committed)
