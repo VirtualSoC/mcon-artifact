@@ -126,10 +126,7 @@ curves). Figures are written to `data/figures/` by default (`--out` to change).
 A plotter with no matching rows prints a note and is skipped rather than writing
 an empty figure.
 
-Compare the trends against the [What it reproduces](#what-it-reproduces) table
-and the paper's figures. Absolute values scale with your hardware (see
-[Hardware note](#hardware-note)); the qualitative MCon-vs-baseline gap is the
-claim.
+Compare the trends against the paper's figures. Absolute values scale with your hardware (see [Hardware note](#hardware-note)).
 
 ## Systems
 
