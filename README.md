@@ -30,6 +30,7 @@ Absolute numbers (max density, peak FPS, crash points) will vary depending on th
 ```bash
 git clone https://github.com/VirtualSoC/mcon-artifact.git
 cd mcon-artifact
+chmod +x cmd
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 ```
