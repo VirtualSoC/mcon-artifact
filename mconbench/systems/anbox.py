@@ -54,9 +54,29 @@ class AnboxDriver(BaselineDriver):
         )
         self.manage_vm = bool(cfg.get("systems.anbox.manage_vm", False))
         self.vm_boot_timeout = float(cfg.get("systems.anbox.vm_boot_timeout_s", 300.0))
+        # On a bare-metal appliance the trusted admin interface is the root UNIX
+        # socket: amc's per-user TLS identity is denied instance create/view by
+        # the appliance's OpenFGA model (even inside the admin group), while root
+        # (client_id 0 via the socket) has full access. So local mode drives amc
+        # through passwordless `sudo` by default. Override with
+        # systems.anbox.amc_sudo (or $ANBOX_AMC_SUDO) when a user's amc TLS
+        # identity really can create instances.
+        self.amc_sudo = bool(cfg.get("systems.anbox.amc_sudo", self.backend == "local"))
+        # GPU slots per instance. amc launch defaults to the instance type's slot
+        # count (0 for the container type), so a real GPU is NOT injected unless
+        # we pass --gpu-slots; without it graphics init hangs and boot never
+        # completes on a bare-metal appliance with a real GPU.
+        self.gpu_slots = int(cfg.get("systems.anbox.gpu_slots", 1))
         self.env.setdefault("ANBOX_BACKEND", self.backend)
         self.env.setdefault("ANBOX_VM", self.vm_name)
+        self.env.setdefault("ANBOX_AMC_SUDO", "1" if self.amc_sudo else "0")
+        self.env.setdefault("ANBOX_GPU_SLOTS", str(self.gpu_slots))
         self._have_multipass = self.backend == "multipass" and shutil.which("multipass") is not None
+
+    @property
+    def _local_amc(self) -> str:
+        """The local amc invocation, optionally via passwordless sudo."""
+        return "sudo -n amc" if self.amc_sudo else "amc"
 
     # -- appliance access ---------------------------------------------------
     def _vm_running(self) -> bool:
@@ -76,14 +96,23 @@ class AnboxDriver(BaselineDriver):
             status = subprocess.run(["anbox-cloud-appliance", "status"], capture_output=True, text=True)
             if status.returncode != 0 or "status: ready" not in status.stdout:
                 raise SystemExit("anbox: local Anbox Cloud Appliance is not ready")
-            auth = subprocess.run(["amc", "node", "ls"], capture_output=True, text=True)
+            auth = subprocess.run(
+                ["bash", "-lc", f"{self._local_amc} node ls"],
+                capture_output=True, text=True, env=self.env,
+            )
             if auth.returncode != 0:
                 msg = (auth.stderr or auth.stdout or "").strip()
-                raise SystemExit(
-                    "anbox: local `amc` is not authorized for this user. "
-                    "Trust the user's AMC client certificate, then retry."
-                    + (f"\n{msg}" if msg else "")
+                hint = (
+                    "anbox: local `sudo amc` failed. Grant passwordless sudo for "
+                    "`amc` (see docs/setup.md, Anbox bare-metal section), or set "
+                    "systems.anbox.amc_sudo=false if this user's amc TLS identity "
+                    "can create instances."
+                    if self.amc_sudo else
+                    "anbox: local `amc` is not authorized for this user. Trust the "
+                    "user's AMC client certificate, or set systems.anbox.amc_sudo=true "
+                    "to use the root unix-socket admin path via sudo."
                 )
+                raise SystemExit(hint + (f"\n{msg}" if msg else ""))
             return
         if not self._have_multipass:
             raise SystemExit("anbox: `multipass` not found; the Anbox appliance VM is required")
@@ -107,7 +136,7 @@ class AnboxDriver(BaselineDriver):
     def _amc(self, args: str) -> subprocess.CompletedProcess:
         if self.backend == "local":
             return subprocess.run(
-                ["bash", "-lc", f"amc {args}"],
+                ["bash", "-lc", f"{self._local_amc} {args}"],
                 capture_output=True,
                 text=True,
                 env=self.env,
@@ -134,11 +163,13 @@ class AnboxDriver(BaselineDriver):
         return out
 
     def _cleanup(self) -> None:
-        # Inner: stop + delete every container (only if the VM is up).
+        # Inner: stop + delete every container (only if the VM is up). Use
+        # --force/--yes so crash-looping or errored instances are still removed
+        # non-interactively; a plain `delete --yes` leaves stuck containers.
         if self._vm_running():
             for cid in self._list_containers():
-                self._amc(f"stop {cid}")
-                self._amc(f"delete {cid} --yes")
+                self._amc(f"stop {cid} --force")
+                self._amc(f"delete {cid} --force --yes")
         # Host: kill anbox-connect sessions and drop stale adb targets.
         subprocess.run(["pkill", "-f", "anbox-connect"], capture_output=True)
         ls = subprocess.run(["tmux", "list-sessions", "-F", "#{session_name}"], capture_output=True, text=True)

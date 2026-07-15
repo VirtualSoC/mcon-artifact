@@ -25,6 +25,18 @@ case "$ANBOX_BACKEND" in
         ;;
 esac
 
+# In local (bare-metal) mode the appliance's trusted admin interface is the root
+# UNIX socket: amc's per-user TLS identity is denied instance create/view by the
+# appliance's OpenFGA model, while root (client_id 0 via the socket) is full
+# admin. So drive amc/gateway through passwordless sudo by default. Set
+# ANBOX_AMC_SUDO=0 to use a plain amc (only if the user's amc TLS identity can
+# create instances). Needs a NOPASSWD sudoers rule for amc + the gateway.
+if [[ "$ANBOX_BACKEND" == "local" && "${ANBOX_AMC_SUDO:-1}" == "1" ]]; then
+    LOCAL_SUDO=(sudo -n)
+else
+    LOCAL_SUDO=()
+fi
+
 # Resolve paths from the script's own location (override with ANBOX_BASE_DIR).
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 BASE_DIR="${ANBOX_BASE_DIR:-$SCRIPT_DIR}"
@@ -50,7 +62,7 @@ quote_cmd() {
 
 amc_cmd() {
     if [[ "$ANBOX_BACKEND" == "local" ]]; then
-        amc "$@"
+        "${LOCAL_SUDO[@]}" amc "$@"
     else
         local cmd
         cmd=$(quote_cmd sudo amc "$@")
@@ -60,7 +72,7 @@ amc_cmd() {
 
 gateway_share() {
     if [[ "$ANBOX_BACKEND" == "local" ]]; then
-        anbox-cloud-appliance.gateway session share "$1"
+        "${LOCAL_SUDO[@]}" anbox-cloud-appliance.gateway session share "$1"
     else
         local cmd
         cmd=$(quote_cmd sudo anbox-cloud-appliance.gateway session share "$1")
@@ -247,7 +259,7 @@ for ((i=1; i<=N; i++)); do
 
             OUT=$(amc_cmd launch jammy:android15:amd64 \
                 --no-wait \
-            --enable-graphics --gpu-type nvidia --enable-streaming \
+            --enable-graphics --gpu-type nvidia --gpu-slots "${ANBOX_GPU_SLOTS:-1}" --enable-streaming \
             --memory 3GB --disk-size 10GB --cpus 1 2>&1)
 
     END_TS=$(date '+%F %T')

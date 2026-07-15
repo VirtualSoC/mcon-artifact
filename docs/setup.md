@@ -196,14 +196,24 @@ container with the libndk `androidboot` props (container *i* → adb port
 
 ### Anbox Cloud
 
-Anbox Cloud runs `amc` Android containers inside a **Multipass VM** running the
-Anbox Cloud **Appliance** (the single-machine variant). our code launches
-containers via [`platform/anbox_test.sh`](../platform/anbox_test.sh) and reaches
-them through `anbox-connect`, which assigns **dynamic** adb ports — so tenants
-are discovered from `adb devices` (`127.0.0.1:*`), not a fixed port map.
+Anbox Cloud runs `amc` Android containers under the Anbox Cloud **Appliance**
+(the single-machine variant). Two backends are selectable via
+`systems.anbox.backend`:
+
+- **`local`** (default) — a **bare-metal** appliance on this host. This is the
+  **GPU-accurate** path: containers render on the host's real GPU. See
+  *Bare-metal appliance* below.
+- **`multipass`** — the appliance inside a Multipass VM. Convenient, but there
+  is **no GPU passthrough** (software rendering), so it is fine for
+  provisioning/deploy metrics but **not** FPS. See *Provision the appliance VM*.
+
+Either way, our code launches containers via
+[`platform/anbox_test.sh`](../platform/anbox_test.sh) and reaches them through
+`anbox-connect`, which assigns **dynamic** adb ports — so tenants are discovered
+from `adb devices` (`127.0.0.1:*`), not a fixed port map.
 
 > **Licensing:** the Anbox Cloud Appliance needs an **Ubuntu Pro** token (free
-> for personal use) to attach inside the VM. Get one at <https://ubuntu.com/pro>.
+> for personal use). Get one at <https://ubuntu.com/pro>.
 
 #### 1. Host prerequisites
 
@@ -265,6 +275,86 @@ provisioning/deploy metrics, but FPS is **not** GPU-accurate on this setup — r
 FPS on a bare-metal appliance with a real GPU if you need it. Note also that
 `jammy:android15:amd64` reports `ro.product.cpu.abilist = x86_64,x86` (no arm64
 translation), so ARM-only corpus apps will not install on the Anbox baseline.
+
+#### Bare-metal appliance (`backend: local`, default)
+
+For **GPU-accurate** runs, install the appliance directly on a host with an
+NVIDIA GPU (no VM, so containers render on the real GPU). Run the same bootstrap
+as above, but on the host itself:
+
+```bash
+sudo snap install anbox-cloud-appliance
+sudo pro attach <UBUNTU_PRO_TOKEN>
+sudo pro enable anbox-cloud --assume-yes
+sudo snap refresh lxd --channel=5.21/stable
+sudo anbox-cloud-appliance prepare-node-script | sudo bash -e   # binder_linux
+sudo anbox-cloud-appliance init --auto
+anbox-cloud-appliance status                                    # -> status: ready
+cd /tmp && sudo amc image add android15 jammy:android15:amd64 --type container --timeout 20m
+```
+
+Confirm the GPU is wired into the node (non-zero `gpu-slots`):
+
+```bash
+sudo amc node show lxd0 | grep -E 'gpu-slots|type: nvidia'
+# gpu-slots: 32   ...   type: nvidia
+```
+
+**Passwordless sudo is required.** On the appliance, `amc`'s per-user **TLS
+identity** is denied instance *create/view* by the built-in OpenFGA
+authorization model — even when the identity is in the `admin` group,
+`amc launch` returns `Error: Not authorized` and `amc ls` hides instances the
+user does not own (which also breaks discovery and cleanup). The reliable local
+admin interface is the **root UNIX socket** (`client_id 0`, which bypasses
+OpenFGA), reached with `sudo amc`. So the `local` backend drives `amc` and the
+gateway through `sudo -n`; grant a scoped NOPASSWD rule:
+
+```bash
+# /etc/sudoers.d/anbox-scalebench
+echo "$USER ALL=(root) NOPASSWD: /snap/bin/amc, /snap/bin/anbox-cloud-appliance.gateway" \
+  | sudo tee /etc/sudoers.d/anbox-scalebench >/dev/null
+sudo chmod 440 /etc/sudoers.d/anbox-scalebench
+sudo visudo -cf /etc/sudoers.d/anbox-scalebench    # validate syntax
+sudo -n amc ls                                     # sanity: no password prompt
+```
+
+If instead your `amc` TLS identity really can create instances (a fully
+configured OpenFGA model), set `systems.anbox.amc_sudo: false` to use a plain
+`amc` and skip the sudoers rule.
+
+#### GPU allocation and boot health
+
+Two more appliance-level settings are needed for instances to reach `running`
+on bare metal:
+
+- **Allocate a GPU slot.** `amc launch --enable-graphics` alone does *not* inject
+  the GPU: `--gpu-slots` defaults to the instance type's count (0 for the
+  `container` type), so `/dev/dri` never appears in the container and graphics
+  init hangs at `started`. The control script passes
+  `--gpu-slots ${ANBOX_GPU_SLOTS:-1}` (config `systems.anbox.gpu_slots`, default
+  1). Verify inside an instance: `sudo amc exec <id> -- ls /dev/dri` shows
+  `renderD128`.
+
+- **Disable in-container security updates** (they need internet the containers
+  usually lack; the apt step otherwise blocks boot indefinitely with
+  `Temporary failure resolving archive.ubuntu.com`):
+
+  ```bash
+  sudo amc config set container.security_updates false
+  sudo amc config set instance.security_updates false
+  ```
+
+  Corpus apps are installed over adb from the host, so containers do not need
+  internet for the benchmark.
+
+> **Kernel-compatibility caveat.** Anbox's Android integration is sensitive to
+> the host kernel. On very new kernels the Android guest can crash-loop during
+> boot with `createProcessGroup ... Transport endpoint is not connected`
+> (repeated SIGABRT, a growing `tombstone_*` count) even though `surfaceflinger`
+> and the GPU renderer start — the instance then never leaves `started`. If you
+> hit this, run the appliance on a kernel version supported by your Anbox Cloud
+> release. Inspect with
+> `sudo amc exec <id> -- tail /var/lib/anbox/data/logs/android.log`.
 
 #### 3. Wire up our code
 

@@ -110,6 +110,13 @@ systems:
   anbox:
     enabled: true
     backend: local               # local | multipass
+    amc_sudo: true               # local: drive amc/gateway via `sudo -n` (root
+                                 # unix-socket admin; needed because amc's TLS
+                                 # identity is denied create by OpenFGA). Set
+                                 # false only if your amc identity can create.
+    gpu_slots: 1                 # --gpu-slots per instance (0 = software render).
+                                 # Must be >=1 to inject the real GPU on bare
+                                 # metal, else graphics init hangs at boot.
     vm_name: anbox               # only used when backend=multipass
     control_script: ""           # default: <scalebench>/platform/anbox_test.sh
     ready_interval_s: 3.0
