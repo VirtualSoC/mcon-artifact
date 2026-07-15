@@ -41,8 +41,8 @@ to build MCon/vSoC and, if needed, prepare the baseline stacks.
 **Point the code at your built tree:**
 
 ```bash
-cp env.example .env && $EDITOR .env      # set BASE_DIR (required) and GUEST_IMG_PATH
-source .env                              # REQUIRED: our code reads these from the environment
+cp env.example .env && $EDITOR .env      # you should set BASE_DIR (required)
+source .env                              # our code reads these from the environment
 ```
 
 `.env` is **not** auto-loaded — `source` it (or otherwise export `BASE_DIR`
@@ -146,14 +146,20 @@ Baseline connection parameters live under `systems.<name>` in
 ## Repository layout
 
 ```
-config/       default.yaml (paths, densities, ports) + smoke/verify/sweep presets
-docs/         setup.md (build MCon + baselines)
-scripts/      fetch_apps.sh (download corpus) + pack_apps.sh (author-side packing)
-mconbench/    schema.py (canonical rows) + CLI, systems/, experiments/, plots/
+cmd                 MCon multi-tenant driver (provision / deploy / measure)
+mconbench/          benchmark code (the `run` / `plot` CLI)
+  systems/          per-system adapters (mcon, vsoc, redroid, anbox, gae)
+  experiments/      provision / deploy / fps experiment implementations
+  plots/            figure builders, CSV loader, shared style
+platform/           per-system control scripts (vsoc.sh, redroid.sh, anbox_test.sh, avd.sh, mcon.py)
+config/             default.yaml (paths, densities, ports) + smoke/verify/sweep presets
+docs/               various documentation including the fifty apps used and production notes
+scripts/            utility scripts like app/image downloading
+apps/               app corpus (populated by scripts/fetch_apps.sh)
 data/
-  runs/       your fresh measurement runs (git-ignored)
-  figures/    figures written by `plot` (git-ignored)
-env.example   copy to .env; sets BASE_DIR, ports, baseline endpoints
+  runs/             your fresh measurement runs (git-ignored)
+  figures/          figures written by `plot` (git-ignored)
+env.example         copy to .env; sets BASE_DIR, ports, baseline endpoints
 ```
 
 ## Troubleshooting
