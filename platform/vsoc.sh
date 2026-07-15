@@ -51,10 +51,10 @@ start_instance() {
     local auto_prime=${VSOC_PRIME_AUTO:-1}
     if (( auto_prime )); then
         local offload_val=$(( (idx % 2) + 1 ))
-        echo "$(date) INFO: instance ${idx} 使用 PRIME Render Offload = ${offload_val}" | tee -a "${LOG_DIR}/vsoc_multi_summary.log"
+        echo "$(date) INFO: instance ${idx} using PRIME Render Offload = ${offload_val}" | tee -a "${LOG_DIR}/vsoc_multi_summary.log"
         gpu_env=("__NV_PRIME_RENDER_OFFLOAD=${offload_val}" "__GLX_VENDOR_LIBRARY_NAME=nvidia")
     elif [[ -n "${__NV_PRIME_RENDER_OFFLOAD:-}" && -n "${__GLX_VENDOR_LIBRARY_NAME:-}" ]]; then
-        echo "$(date) INFO: instance ${idx} 使用用户提供的 PRIME Offload = ${__NV_PRIME_RENDER_OFFLOAD}" | tee -a "${LOG_DIR}/vsoc_multi_summary.log"
+        echo "$(date) INFO: instance ${idx} using user-provided PRIME Offload = ${__NV_PRIME_RENDER_OFFLOAD}" | tee -a "${LOG_DIR}/vsoc_multi_summary.log"
         gpu_env=("__NV_PRIME_RENDER_OFFLOAD=${__NV_PRIME_RENDER_OFFLOAD}" "__GLX_VENDOR_LIBRARY_NAME=${__GLX_VENDOR_LIBRARY_NAME}")
     fi
 
