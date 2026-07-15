@@ -10,7 +10,7 @@
 
 paths:
   base_dir: ${BASE_DIR}                 # vsoc tree root (has bin/qemu, img/, scalebench/)
-  bliss_img_path: ${GUEST_IMG_PATH}     # default: ${BASE_DIR}/img/bliss
+  vsoc_img_path: ${GUEST_IMG_PATH}      # default: ${BASE_DIR}/img/vsoc
   scalebench_dir: ${BASE_DIR}/scalebench
 
 adb:

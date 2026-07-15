@@ -22,9 +22,9 @@ class VSoCDriver(BaselineDriver):
         self.script = self.scalebench_dir / "platform" / "vsoc.sh"
         if not self.script.exists():
             raise SystemExit(f"vsoc.sh not found at {self.script}")
-        bliss = os.environ.get("GUEST_IMG_PATH") or cfg.get("paths.bliss_img_path")
-        if bliss and "${" not in str(bliss):
-            self.env.setdefault("GUEST_IMG_PATH", str(bliss))
+        vsoc = os.environ.get("GUEST_IMG_PATH") or cfg.get("paths.vsoc_img_path")
+        if vsoc and "${" not in str(vsoc):
+            self.env.setdefault("GUEST_IMG_PATH", str(vsoc))
 
     def _ports(self):
         return [str(self.base_monitor_port), str(self.base_adb_port)]

@@ -127,7 +127,7 @@ def raise_nofile_limit(target: int = 1_048_576) -> None:
 @dataclass
 class Config:
     base_dir: Path
-    bliss_img_path: Path
+    vsoc_img_path: Path
     log_dir: Path
     log_file: Path
     pid_file: Path
@@ -148,8 +148,8 @@ class Config:
     @classmethod
     def from_env(cls) -> "Config":
         base_dir = Path(require_env("BASE_DIR"))
-        bliss_default = base_dir / "img" / "bliss"
-        bliss_img_path = Path(os.environ.get("GUEST_IMG_PATH", str(bliss_default)))
+        vsoc_default = base_dir / "img" / "vsoc"
+        vsoc_img_path = Path(os.environ.get("GUEST_IMG_PATH", str(vsoc_default)))
         log_dir = base_dir / "log"
         # Add a time suffix to the logfile so each run gets a distinct file.
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -160,8 +160,8 @@ class Config:
         monitor_timeout = to_int(os.environ.get("MONITOR_TIMEOUT"), 10)
         default_count = to_int(os.environ.get("COUNT"), 1)
         cpu_threads = to_int(os.environ.get("CPU_THREADS"), _detect_cpu_threads())
-        userdata_img = Path(os.environ.get("USERDATA_IMG", str(bliss_img_path / "userdata.qcow2")))
-        userdata_bkp = Path(os.environ.get("USERDATA_BKP", str(bliss_img_path / "userdata_bkp.qcow2")))
+        userdata_img = Path(os.environ.get("USERDATA_IMG", str(vsoc_img_path / "userdata.qcow2")))
+        userdata_bkp = Path(os.environ.get("USERDATA_BKP", str(vsoc_img_path / "userdata_bkp.qcow2")))
         bridge_port = to_int(os.environ.get("BRIDGE_PORT"), 5_555)
         adb_target = os.environ.get("ADB_TARGET", "localhost:5555")
         launcher_process = os.environ.get("LAUNCHER_PROCESS", "com.android.launcher3")
@@ -170,7 +170,7 @@ class Config:
         adb_connect_retries = to_int(os.environ.get("ADB_CONNECT_RETRIES"), 5)
         return cls(
             base_dir=base_dir,
-            bliss_img_path=bliss_img_path,
+            vsoc_img_path=vsoc_img_path,
             log_dir=log_dir,
             log_file=log_file,
             pid_file=pid_file,
@@ -239,15 +239,15 @@ def start_instance(cfg: Config, display_count: int) -> None:
         "-device",
         "hda-duplex",
         "-kernel",
-        str(cfg.bliss_img_path / "kernel"),
+        str(cfg.vsoc_img_path / "kernel"),
         "-append",
         "nokaslr no_timer_check syscall_hardening=off root=/dev/ram0 androidboot.hardware=redroid androidboot.fstab_suffix=redroid androidboot.selinux=permissive console=ttyS0",
         "-initrd",
-        str(cfg.bliss_img_path / "ramdisk.img"),
+        str(cfg.vsoc_img_path / "ramdisk.img"),
         "-drive",
-        f"index=0,if=virtio,id=system,file={cfg.bliss_img_path / 'system.img'},format=raw,readonly=on",
+        f"index=0,if=virtio,id=system,file={cfg.vsoc_img_path / 'system.img'},format=raw,readonly=on",
         "-drive",
-        f"index=1,if=virtio,id=vendor,file={cfg.bliss_img_path / 'vendor.img'},format=raw,readonly=on",
+        f"index=1,if=virtio,id=vendor,file={cfg.vsoc_img_path / 'vendor.img'},format=raw,readonly=on",
         "-drive",
         f"index=2,if=virtio,id=userdata,file={cfg.userdata_img},format=qcow2",
         "-display",

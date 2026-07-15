@@ -42,9 +42,9 @@ class MConDriver(Driver):
         # mcon.py reads BASE_DIR / GUEST_IMG_PATH / ports from the environment.
         self.env = dict(os.environ)
         self.env.setdefault("BASE_DIR", str(self.base_dir))
-        bliss = cfg.get("paths.bliss_img_path")
-        if bliss and "${" not in str(bliss):
-            self.env.setdefault("GUEST_IMG_PATH", str(bliss))
+        vsoc = cfg.get("paths.vsoc_img_path")
+        if vsoc and "${" not in str(vsoc):
+            self.env.setdefault("GUEST_IMG_PATH", str(vsoc))
         self.env.setdefault("MONITOR_PORT", str(cfg.get("adb.monitor_port", 55555)))
         self.env.setdefault("BRIDGE_PORT", str(cfg.get("adb.bridge_port", 5555)))
         self.env.setdefault("LAUNCHER_TIMEOUT", str(cfg.get("mcon.launcher_timeout_s", 600)))

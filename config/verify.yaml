@@ -5,7 +5,7 @@
 
 paths:
   base_dir: ${BASE_DIR}
-  bliss_img_path: ${GUEST_IMG_PATH}
+  vsoc_img_path: ${GUEST_IMG_PATH}
   scalebench_dir: ${BASE_DIR}/scalebench
 
 adb:

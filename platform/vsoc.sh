@@ -51,16 +51,16 @@ start_instance() {
     local auto_prime=${VSOC_PRIME_AUTO:-1}
     if (( auto_prime )); then
         local offload_val=$(( (idx % 2) + 1 ))
-        echo "$(date) INFO: instance ${idx} 使用 PRIME Render Offload = ${offload_val}" | tee -a "${LOG_DIR}/bliss_multi_summary.log"
+        echo "$(date) INFO: instance ${idx} 使用 PRIME Render Offload = ${offload_val}" | tee -a "${LOG_DIR}/vsoc_multi_summary.log"
         gpu_env=("__NV_PRIME_RENDER_OFFLOAD=${offload_val}" "__GLX_VENDOR_LIBRARY_NAME=nvidia")
     elif [[ -n "${__NV_PRIME_RENDER_OFFLOAD:-}" && -n "${__GLX_VENDOR_LIBRARY_NAME:-}" ]]; then
-        echo "$(date) INFO: instance ${idx} 使用用户提供的 PRIME Offload = ${__NV_PRIME_RENDER_OFFLOAD}" | tee -a "${LOG_DIR}/bliss_multi_summary.log"
+        echo "$(date) INFO: instance ${idx} 使用用户提供的 PRIME Offload = ${__NV_PRIME_RENDER_OFFLOAD}" | tee -a "${LOG_DIR}/vsoc_multi_summary.log"
         gpu_env=("__NV_PRIME_RENDER_OFFLOAD=${__NV_PRIME_RENDER_OFFLOAD}" "__GLX_VENDOR_LIBRARY_NAME=${__GLX_VENDOR_LIBRARY_NAME}")
     fi
 
-    local pidfile="${LOG_DIR}/bliss_multi_${idx}.pid"
-    local qlog="${LOG_DIR}/bliss_multi_${idx}.log"
-    local serial_log="${LOG_DIR}/bliss_multi_kernel_${idx}.log"
+    local pidfile="${LOG_DIR}/vsoc_multi_${idx}.pid"
+    local qlog="${LOG_DIR}/vsoc_multi_${idx}.log"
+    local serial_log="${LOG_DIR}/vsoc_multi_kernel_${idx}.log"
 
     local qemu_args=(
         bin/qemu-system-x86_64
@@ -75,7 +75,7 @@ start_instance() {
         -device teleport,gl_debug=off,gl_log_level=0,display_width=1080,display_height=1920,window_width=540,window_height=960,refresh_rate=60,display_count=1,headless_mode=on,bridge_port=${adb_port}
         -netdev user,id=cell -device virtio-net-pci,netdev=cell
         -netdev user,id=wlan -device virtio-net-pci,netdev=wlan
-        -name "bliss-multi-${idx}",debug-threads=on
+        -name "vsoc-multi-${idx}",debug-threads=on
     )
 
     if [[ "${VSOC_DEBUG_STDOUT:-0}" == "1" ]]; then
@@ -103,9 +103,9 @@ start_instance() {
 
 stop_instances() {
     local killed=0
-    mapfile -t pids < <(pgrep -f "bliss-multi-" || true)
+    mapfile -t pids < <(pgrep -f "vsoc-multi-" || true)
     if ((${#pids[@]} == 0)); then
-        echo "$(date) INFO: no bliss-multi qemu processes running"
+        echo "$(date) INFO: no vsoc-multi qemu processes running"
         return 0
     fi
 
@@ -126,17 +126,17 @@ stop_instances() {
         fi
     done
 
-    rm -f "${LOG_DIR}"/bliss_multi_*.pid
-    echo "$(date) INFO: stopped ${killed}/${#pids[@]} qemu processes" | tee -a "${LOG_DIR}/bliss_multi_summary.log"
+    rm -f "${LOG_DIR}"/vsoc_multi_*.pid
+    echo "$(date) INFO: stopped ${killed}/${#pids[@]} qemu processes" | tee -a "${LOG_DIR}/vsoc_multi_summary.log"
 }
 
 remove_instances() {
     stop_instances || true
     for ((i=0; i<COUNT; i++)); do
         rm -f "${GUEST_IMG_PATH}/userdata_multi_${i}.qcow2"
-        rm -f "${LOG_DIR}/bliss_multi_${i}.pid" "${LOG_DIR}/bliss_multi_${i}.log" "${LOG_DIR}/bliss_multi_kernel_${i}.log"
+        rm -f "${LOG_DIR}/vsoc_multi_${i}.pid" "${LOG_DIR}/vsoc_multi_${i}.log" "${LOG_DIR}/vsoc_multi_kernel_${i}.log"
     done
-    echo "$(date) INFO: removed overlays/logs for ${COUNT} instance(s)" | tee -a "${LOG_DIR}/bliss_multi_summary.log"
+    echo "$(date) INFO: removed overlays/logs for ${COUNT} instance(s)" | tee -a "${LOG_DIR}/vsoc_multi_summary.log"
 }
 
 run_instances() {
@@ -146,8 +146,8 @@ run_instances() {
         start_instance "${i}" $((BASE_MONITOR_PORT + i)) $((BASE_ADB_PORT + i)) || true
         sleep 1
     done
-    echo "$(date) INFO: launched ${COUNT} instance(s). Monitor ports ${BASE_MONITOR_PORT}..$((BASE_MONITOR_PORT + COUNT - 1)), ADB ports ${BASE_ADB_PORT}..$((BASE_ADB_PORT + COUNT - 1))" | tee -a "${LOG_DIR}/bliss_multi_summary.log"
-    echo "Connect via: adb connect localhost:${BASE_ADB_PORT}" | tee -a "${LOG_DIR}/bliss_multi_summary.log"
+    echo "$(date) INFO: launched ${COUNT} instance(s). Monitor ports ${BASE_MONITOR_PORT}..$((BASE_MONITOR_PORT + COUNT - 1)), ADB ports ${BASE_ADB_PORT}..$((BASE_ADB_PORT + COUNT - 1))" | tee -a "${LOG_DIR}/vsoc_multi_summary.log"
+    echo "Connect via: adb connect localhost:${BASE_ADB_PORT}" | tee -a "${LOG_DIR}/vsoc_multi_summary.log"
     popd >/dev/null
 }
 
@@ -161,7 +161,7 @@ Usage: $0 <run|stop|rm> [count] [base_monitor_port] [base_adb_port]
   run  : launch COUNT instances (default 4)
   stop : stop up to COUNT instances
   rm   : stop + delete per-instance userdata/logs
-Example: BASE_DIR=/home/server/Desktop/vsoc GUEST_IMG_PATH=\$BASE_DIR/img/bliss \
+Example: BASE_DIR=/home/server/Desktop/vsoc GUEST_IMG_PATH=\$BASE_DIR/img/vsoc \
          $0 run 16 60000 15555
 EOF
         exit 1

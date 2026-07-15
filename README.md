@@ -130,8 +130,7 @@ Compare the trends against the paper's figures. Absolute values scale with your 
 
 ## Systems
 
-MCon is first-class; each baseline runs one instance per tenant behind the same
-driver interface. Baseline connection parameters live under `systems.<name>` in
+Baseline connection parameters live under `systems.<name>` in
 [config/default.yaml](config/default.yaml); setup is in
 [docs/setup.md](docs/setup.md).
 
