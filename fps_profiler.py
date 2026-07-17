@@ -80,7 +80,11 @@ def parse_gfxinfo_section(section_text, pid):
             
         weighted_sum = sum(ms * count for ms, count in histogram_dict.items())
         average_latency = weighted_sum / total_frames
-        fps = 1000 / average_latency if average_latency > 0 else 0
+        # FPS from the mean frame time, capped at the 60 Hz vsync ceiling: the
+        # display refreshes at most 60x/s, so a frame that renders in <16.67 ms
+        # still shows for one vsync interval and cannot exceed 60 fps. Matches the
+        # reference methodology (calc_normal_fps_from_file.py: min(60, 1000/avg)).
+        fps = min(60.0, 1000 / average_latency) if average_latency > 0 else 0
         
         # Extract additional metrics
         percentile_50_match = re.search(r"50th percentile: (\d+)ms", section_text)

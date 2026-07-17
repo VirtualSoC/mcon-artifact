@@ -1,7 +1,6 @@
 # Environment setup
 
-Set up MCon and the four baseline stacks **once**, before running any experiment
-(Tier 1 and up). This page assumes you have already cloned the artifact repo and
+Set up MCon and the four baseline stacks **once**, before running any experiment. This page assumes you have already cloned the artifact repo and
 are reading it from that checkout; repo-relative links such as
 [`env.example`](../env.example) and [`config/default.yaml`](../config/default.yaml)
 refer to files in the clone.
@@ -9,13 +8,7 @@ refer to files in the clone.
 Paths below are relative to the artifact's `BASE_DIR` (see
 [`env.example`](../env.example)).
 
-## Host prerequisites
-
-- Linux host with an NVIDIA GPU and driver (version 550 and above), for GPU-accelerated rendering.
-- KVM enabled: `/dev/kvm` accessible.
-- `adb` on `PATH`, `python3`.
-
-## MCon and vSoC (required)
+## MCon and vSoC
 
 MCon and the vSoC baseline are built from the **same** source tree and share
 a single build. Follow the Linux section of the vSoC build guide:
