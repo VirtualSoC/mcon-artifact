@@ -33,21 +33,18 @@ cd mcon-artifact
 chmod +x cmd
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
+cp env.example .env
 ```
 
 **Build the stacks.** From the cloned checkout, follow **[docs/setup.md](docs/setup.md)**
-to build MCon/vSoC and, if needed, prepare the baseline stacks.
+to build MCon/vSoC and, if needed, prepare the baseline stacks. You will need to edit the copied `.env` file to configure several env variables during the build process.
 
 **Point the code at your built tree:**
 
 ```bash
-cp env.example .env && $EDITOR .env      # you should set BASE_DIR (required)
-source .env                              # our code reads these from the environment
+$EDITOR .env      # set BASE_DIR to the built tree (required)
+source .env       # our code reads these from the environment
 ```
-
-`.env` is **not** auto-loaded — `source` it (or otherwise export `BASE_DIR`
-etc.) in every shell before running `mconbench`. The `config/*.yaml` files expand
-`${BASE_DIR}` and friends from the environment.
 
 ## Step 2 — Download the app corpus
 

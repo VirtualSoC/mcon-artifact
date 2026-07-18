@@ -9,10 +9,8 @@ ulimit -n 100000
 
 # Prebuilt outer-VM image; override with REDROID_IMG_PATH.
 REDROID_IMG_PATH="${REDROID_IMG_PATH:-${BASE_DIR}/img/redroid/redroid.qcow2}"
-# Size the VM to your host. The paper machine used 36 vCPU / 180 GiB; 8 vCPU /
-# 16 GiB is a sane floor for low tenant counts.
-REDROID_VM_CPUS="${REDROID_VM_CPUS:-8}"
-REDROID_VM_MEM="${REDROID_VM_MEM:-16G}"
+REDROID_VM_CPUS="${REDROID_VM_CPUS:-${VM_CPUS:?set VM_CPUS or REDROID_VM_CPUS; source scalebench/.env (see env.example)}}"
+REDROID_VM_MEM="${REDROID_VM_MEM:-${VM_MEM:?set VM_MEM or REDROID_VM_MEM; source scalebench/.env (see env.example)}}"
 REDROID_SEED_IMG="${REDROID_SEED_IMG:-${BASE_DIR}/img/redroid/redroid-seed.img}"
 REDROID_VM_PASSWORD="${REDROID_VM_PASSWORD:-redroid}"
 REDROID_DISPLAY="${REDROID_DISPLAY:-sdl,gl=on}"

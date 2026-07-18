@@ -24,6 +24,28 @@ When the build finishes you should have `bin/qemu-system-x86_64` and a guest ima
    - `--system mcon` — multi-tenant MCon.
    - `--system vsoc` — one QEMU instance per tenant.
 
+## Tuning VM size (RAM / CPU)
+
+Every VM-backed system (MCon, Redroid, and the Multipass-backend Anbox) is sized
+from one unified pair of knobs in [`env.example`](../env.example): `VM_MEM` and `VM_CPUS`. You should edit your copy `.env` to set them to a safe fraction of your host's RAM and CPU count.
+
+**How to pick values:**
+
+- **RAM:** The VM's RAM caps how many tenants can run. It is strongly recommended to at least leave the host 4-8 GiB of headroom. A safe starting point is **75% of host RAM** for the VM (the default), though MCon paper's results tune the RAM a bit more aggressively (120 GiB out of 128 GiB).
+
+- **vCPUs:** set `VM_CPUS` at or below your physical core/thread count and leave
+  a few for the host and QEMU's own I/O / GPU threads (MCon reserves 4 by
+  default).
+
+**Precedence** (per system): a system-specific override wins over the unified
+knob, which wins over the built-in default:
+
+| System | RAM: specific override | CPU: specific override |
+|---|---|---|---|---|
+| MCon | `MCON_VM_MEM` | `MCON_VM_CPUS` |
+| Redroid | `REDROID_VM_MEM` | `REDROID_VM_CPUS` |
+| Anbox (with multipass VM) | `--memory` on `multipass launch` | `--cpus` on `multipass launch` |
+
 ## Baselines (optional)
 
 The remaining three baselines each run inside their own outer VM and are only
@@ -82,7 +104,9 @@ below.
 [`platform/redroid.sh`](../platform/redroid.sh) boots the image and forwards SSH
 (host `2222` → guest `22`) plus the adb bridge ports `5555-5655`. Size it to your
 host — the paper used 36 vCPU / 180 GiB (`BASE_DIR` must be set; `source .env`
-first):
+first). The example below sets the Redroid-specific overrides; to size all
+systems at once use the unified `VM_MEM` / `VM_CPUS` knob instead (see
+[Tuning VM size (RAM / CPU)](#tuning-vm-size-ram--cpu)):
 
 ```bash
 REDROID_VM_CPUS=8 REDROID_VM_MEM=16G bash platform/redroid.sh &
@@ -112,8 +136,7 @@ systems:
 
 #### 4. Point our code at the VM
 
-Set the SSH endpoint (env overrides `config/default.yaml`; keep the password out
-of git — shell only):
+Set the SSH endpoint in your `.env` file (env overrides `config/default.yaml`:
 
 ```bash
 export REDROID_SSH_HOST=localhost
@@ -272,8 +295,9 @@ appliance `1.30.0`; adapt if a newer release changes a step.
 
 ```bash
 # 1. Create the VM. The 1.30 appliance needs LXD >= 5.21, newer than 22.04 ships,
-#    so refresh LXD before initialising.
-multipass launch --name anbox --cpus 8 --memory 16G --disk 2T 22.04
+#    so refresh LXD before initialising. Size the VM with the unified VM_CPUS /
+#    VM_MEM knob (see env.example).
+multipass launch --name anbox --cpus "${VM_CPUS}" --memory "${VM_MEM}" --disk 2T 22.04
 multipass exec anbox -- sudo snap refresh lxd --channel=5.21/stable
 
 # 2. Install the appliance, attach Ubuntu Pro, and ENABLE the anbox-cloud

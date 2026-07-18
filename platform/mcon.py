@@ -135,7 +135,10 @@ class Config:
     monitor_port: int
     monitor_timeout: int
     default_count: int
-    cpu_threads: int
+    smp: int
+    guest_mem: str
+    display_width: int
+    display_height: int
     userdata_img: Path
     userdata_bkp: Path
     bridge_port: int
@@ -159,7 +162,18 @@ class Config:
         monitor_port = to_int(os.environ.get("MONITOR_PORT"), 55_555)
         monitor_timeout = to_int(os.environ.get("MONITOR_TIMEOUT"), 10)
         default_count = to_int(os.environ.get("COUNT"), 1)
-        cpu_threads = to_int(os.environ.get("CPU_THREADS"), _detect_cpu_threads())
+        # --- VM sizing (RAM + vCPUs) ---------------------------------------
+        guest_mem = os.environ.get("MCON_VM_MEM") or os.environ.get("VM_MEM")
+        if not guest_mem:
+            log("ERROR", "VM_MEM (or MCON_VM_MEM) must be set; source scalebench/.env (see env.example)")
+            sys.exit(1)
+        cpus_env = os.environ.get("MCON_VM_CPUS") or os.environ.get("VM_CPUS")
+        if not cpus_env:
+            log("ERROR", "VM_CPUS (or MCON_VM_CPUS) must be set; source scalebench/.env (see env.example)")
+            sys.exit(1)
+        smp = max(1, to_int(cpus_env, 1))
+        display_width = to_int(os.environ.get("DISPLAY_WIDTH"), 1080)
+        display_height = to_int(os.environ.get("DISPLAY_HEIGHT"), 1920)
         userdata_img = Path(os.environ.get("USERDATA_IMG", str(vsoc_img_path / "userdata.qcow2")))
         userdata_bkp = Path(os.environ.get("USERDATA_BKP", str(vsoc_img_path / "userdata_bkp.qcow2")))
         bridge_port = to_int(os.environ.get("BRIDGE_PORT"), 5_555)
@@ -178,7 +192,10 @@ class Config:
             monitor_port=monitor_port,
             monitor_timeout=monitor_timeout,
             default_count=default_count,
-            cpu_threads=cpu_threads,
+            smp=smp,
+            guest_mem=guest_mem,
+            display_width=display_width,
+            display_height=display_height,
             userdata_img=userdata_img,
             userdata_bkp=userdata_bkp,
             bridge_port=bridge_port,
@@ -188,26 +205,6 @@ class Config:
             adb_connect_timeout=adb_connect_timeout,
             adb_connect_retries=adb_connect_retries,
         )
-
-
-def _detect_cpu_threads() -> int:
-    for cmd in ("nproc",):
-        try:
-            result = subprocess.run([cmd], capture_output=True, check=True, text=True)
-            value = int(result.stdout.strip())
-            if value > 0:
-                return value
-        except (FileNotFoundError, subprocess.CalledProcessError, ValueError):
-            continue
-    try:
-        import multiprocessing
-
-        value = multiprocessing.cpu_count()
-        if value > 0:
-            return value
-    except (ImportError, NotImplementedError):
-        pass
-    return 12  # sensible fallback
 
 
 def ensure_log_dir(cfg: Config) -> None:
@@ -227,13 +224,13 @@ def start_instance(cfg: Config, display_count: int) -> None:
         "-cpu",
         "max",
         "-smp",
-        str(cfg.cpu_threads - 4),
+        str(cfg.smp),
         "-object",
-        "memory-backend-memfd,id=mem,size=24G,share=on",
+        f"memory-backend-memfd,id=mem,size={cfg.guest_mem},share=on",
         "-machine",
         "memory-backend=mem",
         "-m",
-        "24G",
+        cfg.guest_mem,
         "-device",
         "intel-hda",
         "-device",
@@ -254,8 +251,8 @@ def start_instance(cfg: Config, display_count: int) -> None:
         "none",
         "-device",
         (
-            "teleport,gl_debug=off,gl_log_level=0,gl_log_to_host=off,display_width=1080,"  # noqa: E501
-            "display_height=1920,window_width=540,window_height=960,refresh_rate=60,"  # noqa: E501
+            f"teleport,gl_debug=off,gl_log_level=0,gl_log_to_host=off,display_width={cfg.display_width},"  # noqa: E501
+            f"display_height={cfg.display_height},window_width=540,window_height=960,refresh_rate=60,"  # noqa: E501
             f"display_count={display_count},headless_mode=on,multi_process=on,bridge_port={cfg.bridge_port}"
         ),
         "-serial",
