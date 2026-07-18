@@ -193,11 +193,9 @@ Anbox Cloud runs `amc` Android containers under the Anbox Cloud **Appliance**
 (the single-machine variant). Two backends are selectable via
 `systems.anbox.backend`:
 
-- **`local`** (default) — a **bare-metal** appliance on this host. This is the path MCon uses: containers render on the host's real GPU. See
+- **`local`** (default) — a **bare-metal** appliance on this host. This is the recommended path: containers render on the host's real GPU. See
   *Bare-metal appliance* below.
-- **`multipass`** — the appliance inside a Multipass VM. Convenient, but there
-  is **no GPU passthrough** (software rendering), so it is fine for
-  provisioning/deploy metrics but **not** FPS. See *Provision the appliance VM*.
+- **`multipass`** — the appliance inside a Multipass VM. Convenient, but you need to manually configure GPU passthrough into the VM, and from our experience this is laborious. If GPU passthrough is not configured, the appliance will still run containers, but they will render in software and you will get valid provisioning/deploy metrics but not FPS. See *Provision the appliance VM*.
 
 Either way, our code launches containers via
 [`platform/anbox_test.sh`](../platform/anbox_test.sh) and reaches them through
