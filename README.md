@@ -6,7 +6,7 @@ This artifact reproduces MCon's headline **elasticity** results: fast tenant
 provisioning, near-`O(1)` app deployment, and high app throughput / instance
 density versus per-tenant container and emulator stacks.
 
-Each experiment writes a canonical CSV and plots one paper figure:
+Each experiment writes a CSV and plots one paper figure:
 
 | Claim (paper §) | Experiment (`run`) | Figure (`plot`) | Expected qualitative trend |
 |---|---|---|---|
@@ -137,7 +137,7 @@ Baseline connection parameters live under `systems.<name>` in
 | `mcon` | MCon (multi-tenant, shared framework) |
 | `vsoc` | vSoC — one QEMU instance per tenant |
 | `redroid` | Redroid — Docker Android containers in an outer VM (SSH) |
-| `anbox` | Anbox Cloud — `amc` containers in a Multipass VM |
+| `anbox` | Anbox Cloud — `amc` containers on bare-metal or in a Multipass VM |
 | `gae` | Google Android Emulator — stock AVDs |
 
 ## Repository layout
