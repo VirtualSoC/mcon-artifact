@@ -280,6 +280,17 @@ def start_instance(cfg: Config, display_count: int) -> None:
     try:
         # Ensure the parent log directory exists
         ensure_log_dir(cfg)
+        # Steer the multi-process GPU workers to the NVIDIA GBM backend + NVIDIA-only
+        # EGL vendor when NVIDIA hardware is present. Otherwise each vsoc-worker also
+        # loads Mesa's software GL stack (libgbm's dri backend -> libgallium + libLLVM,
+        # plus libEGL_mesa) on top of the NVIDIA driver that actually renders.
+        qemu_env = os.environ.copy()
+        nvidia_gbm = "/usr/lib/x86_64-linux-gnu/gbm/nvidia-drm_gbm.so"
+        nvidia_egl = "/usr/share/glvnd/egl_vendor.d/10_nvidia.json"
+        if "GBM_BACKEND" not in qemu_env and os.path.exists(nvidia_gbm):
+            qemu_env["GBM_BACKEND"] = "nvidia-drm"
+        if "__EGL_VENDOR_LIBRARY_FILENAMES" not in qemu_env and os.path.exists(nvidia_egl):
+            qemu_env["__EGL_VENDOR_LIBRARY_FILENAMES"] = nvidia_egl
         # Open logfile in append mode and hand the FD to the child process.
         fh = open(str(cfg.log_file), "ab")
         proc = subprocess.Popen(
@@ -288,6 +299,7 @@ def start_instance(cfg: Config, display_count: int) -> None:
             stderr=fh,
             cwd=str(cfg.base_dir),
             start_new_session=True,
+            env=qemu_env,
         )
         # We do not wait here; QEMU will create the pidfile when ready.
         time.sleep(0.1)
