@@ -228,7 +228,7 @@ class AnboxDriver(BaselineDriver):
                 (candidate for candidate in (listing.stdout or "").splitlines() if container_id in candidate),
                 "",
             )
-            if re.search(r"\b(?:running|started)\b", line, re.IGNORECASE):
+            if re.search(r"\brunning\b", line, re.IGNORECASE):
                 session_match = re.search(r"session=([a-z0-9]+)", line, re.IGNORECASE)
                 if session_match:
                     session_id = session_match.group(1)
