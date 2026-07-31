@@ -232,7 +232,7 @@ run_avds() {
             emulator_cmd+=(-no-window)
         fi
         index=$((i-1))
-        target=$(awk -v start="${batch_start}" -v index="${index}" -v interval="${ISSUE_INTERVAL_S}" 'BEGIN { printf "%.9f", start + index * interval }')
+        target=$(awk -v start="${batch_start}" -v idx="${index}" -v interval="${ISSUE_INTERVAL_S}" 'BEGIN { printf "%.9f", start + idx * interval }')
         now=$(cut -d' ' -f1 /proc/uptime)
         delay=$(awk -v target="${target}" -v now="${now}" 'BEGIN { d = target - now; if (d > 0) printf "%.9f", d; else print "0" }')
         [[ "${delay}" == "0" ]] || sleep "${delay}"
@@ -296,7 +296,7 @@ launch_avds() {
             emulator_cmd+=(-no-window)
         fi
 
-        target=$(awk -v start="${batch_start}" -v index="${index}" -v interval="${ISSUE_INTERVAL_S}" 'BEGIN { printf "%.9f", start + index * interval }')
+        target=$(awk -v start="${batch_start}" -v idx="${index}" -v interval="${ISSUE_INTERVAL_S}" 'BEGIN { printf "%.9f", start + idx * interval }')
         now=$(cut -d' ' -f1 /proc/uptime)
         delay=$(awk -v target="${target}" -v now="${now}" 'BEGIN { d = target - now; if (d > 0) printf "%.9f", d; else print "0" }')
         [[ "${delay}" == "0" ]] || sleep "${delay}"

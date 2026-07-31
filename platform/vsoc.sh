@@ -148,7 +148,7 @@ run_instances() {
     batch_start=$(cut -d' ' -f1 /proc/uptime)
     for ((i=0; i<COUNT; i++)); do
         local target now delay issued issued_monotonic
-        target=$(awk -v start="${batch_start}" -v index="${i}" -v interval="${ISSUE_INTERVAL_S}" 'BEGIN { printf "%.9f", start + index * interval }')
+        target=$(awk -v start="${batch_start}" -v idx="${i}" -v interval="${ISSUE_INTERVAL_S}" 'BEGIN { printf "%.9f", start + idx * interval }')
         now=$(cut -d' ' -f1 /proc/uptime)
         delay=$(awk -v target="${target}" -v now="${now}" 'BEGIN { d = target - now; if (d > 0) printf "%.9f", d; else print "0" }')
         [[ "${delay}" == "0" ]] || sleep "${delay}"

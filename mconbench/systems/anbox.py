@@ -228,8 +228,8 @@ class AnboxDriver(BaselineDriver):
                 (candidate for candidate in (listing.stdout or "").splitlines() if container_id in candidate),
                 "",
             )
-            if " running " in line:
-                session_match = re.search(r"session=([a-z0-9]+)", line)
+            if re.search(r"\b(?:running|started)\b", line, re.IGNORECASE):
+                session_match = re.search(r"session=([a-z0-9]+)", line, re.IGNORECASE)
                 if session_match:
                     session_id = session_match.group(1)
                     break
@@ -247,7 +247,10 @@ class AnboxDriver(BaselineDriver):
         session_name = f"anbox_{index + 1}"
         log_path = self.artifact_dir / "platform" / "anbox_connect_logs" / f"session_{index + 1}.log"
         subprocess.run(["tmux", "kill-session", "-t", session_name], capture_output=True)
-        command = f"anbox-connect {shlex.quote(url_match.group(0))} -k 2>&1 | tee -a {shlex.quote(str(log_path))}"
+        command = (
+            f"while true; do anbox-connect {shlex.quote(url_match.group(0))} -k 2>&1 "
+            f"| tee -a {shlex.quote(str(log_path))}; sleep 1; done"
+        )
         started = subprocess.run(
             ["tmux", "new-session", "-d", "-s", session_name, command],
             capture_output=True,

@@ -14,6 +14,7 @@ REDROID_VM_MEM="${REDROID_VM_MEM:-${VM_MEM:?set VM_MEM or REDROID_VM_MEM; source
 REDROID_SEED_IMG="${REDROID_SEED_IMG:-${BASE_DIR}/img/redroid/redroid-seed.img}"
 REDROID_VM_PASSWORD="${REDROID_VM_PASSWORD:-redroid}"
 REDROID_DISPLAY="${REDROID_DISPLAY:-sdl,gl=on}"
+REDROID_FIRMWARE="${REDROID_FIRMWARE:-uefi}"
 REDROID_SERIAL_LOG="${REDROID_SERIAL_LOG:-${BASE_DIR}/log/redroid-serial.log}"
 REDROID_QEMU_LOG="${REDROID_QEMU_LOG:-${BASE_DIR}/log/redroid-qemu.log}"
 
@@ -90,7 +91,15 @@ if [[ ! -f "${REDROID_IMG_PATH}" ]]; then
     exit 1
 fi
 
-OVMF_PATH="$(find_ovmf)"
+FIRMWARE_ARGS=()
+case "${REDROID_FIRMWARE}" in
+    uefi) FIRMWARE_ARGS=(-bios "$(find_ovmf)") ;;
+    bios) ;;
+    *)
+        echo "redroid.sh: REDROID_FIRMWARE must be 'uefi' or 'bios'" >&2
+        exit 1
+        ;;
+esac
 ensure_seed_img
 mkdir -p "$(dirname "${REDROID_SERIAL_LOG}")" "$(dirname "${REDROID_QEMU_LOG}")"
 
@@ -100,7 +109,7 @@ for p in $(seq 5555 5655); do
     HOSTFWD+=",hostfwd=tcp::${p}-:${p}"
 done
 
-bin/qemu-system-x86_64 -bios "${OVMF_PATH}" -enable-kvm -cpu host \
+bin/qemu-system-x86_64 "${FIRMWARE_ARGS[@]}" -enable-kvm -cpu host \
     -smp "${REDROID_VM_CPUS}" -m "${REDROID_VM_MEM}" \
     -netdev "user,id=net0,${HOSTFWD}" -device virtio-net-pci,netdev=net0 \
     -device virtio-scsi-pci,id=scsi0 \
