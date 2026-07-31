@@ -24,9 +24,9 @@ sweep:
 
 experiments:
   provision_concurrent:
-    launcher_process: com.android.launcher3
     ready_timeout_s: 120
-    interval_s: 1.0
+    intervals_s: [0, 0.5, 1.0]
+    ready_poll_interval_s: 0.1
     boot_timeout_s: 180
     prime_warm: auto             # warm pool = max(densities)+1 framework namespaces
     reset_before_prime: true     # start from a clean userdata image
@@ -34,6 +34,7 @@ experiments:
     apps_dir: ${BASE_DIR}/scalebench/apps
     max_apps: 3                  # only a few apps so a verify run is quick
     provision_interval_s: 0.5
+    ready_poll_interval_s: 0.1
     boot_timeout_s: 180
   fps:
     pattern: random              # distinct app per tenant (avoids same-pkg collision)
@@ -46,6 +47,7 @@ experiments:
     max_apps: 6                  # >= max density so each tenant gets a distinct app
     apps_dir: ${BASE_DIR}/scalebench/apps
     provision_interval_s: 0.5
+    ready_poll_interval_s: 0.1
     boot_timeout_s: 180
 
 output:

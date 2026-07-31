@@ -29,8 +29,14 @@ class VSoCDriver(BaselineDriver):
     def _ports(self):
         return [str(self.base_monitor_port), str(self.base_adb_port)]
 
-    def _launch(self, n: int) -> bool:
-        return self._sh(self.script, ["run", str(n), *self._ports()]) == 0
+    def _launch(self, n: int, interval: float, ready_poll_interval: float):
+        return self._launch_batch_script(
+            self.script,
+            ["run", str(n), *self._ports()],
+            n,
+            interval,
+            ready_poll_interval,
+        )
 
     def _stop(self, n: int) -> None:
         self._sh(self.script, ["stop", str(n), *self._ports()])

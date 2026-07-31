@@ -10,7 +10,7 @@ Each experiment writes a CSV and plots one paper figure:
 
 | Claim (paper §) | Experiment (`run`) | Figure (`plot`) | Expected qualitative trend |
 |---|---|---|---|
-| Sub-second, scalable provisioning (§6.2) | `provision_concurrent` | `container_boot_time.pdf` | MCon ~1 s @ N=1, near-linear; baselines >15 s floor |
+| Sub-second, scalable provisioning (§6.2) | `provision_concurrent` | `container_boot_time.pdf` | Sweeps issuance rates at each N; MCon ~1 s @ N=1, near-linear; baselines >15 s floor |
 | Near-`O(1)` deployment (§6.3) | `deploy` | `container_install_time.pdf` | MCon grows ~1.7x from 1→64; baselines `O(N)` |
 | High throughput & density (§6.4) | `fps` | `fps.pdf` | MCon sustains FPS to higher N than baselines |
 
@@ -95,6 +95,25 @@ python -m mconbench run fps                  --system mcon --config config/defau
 Re-run each with `--system vsoc` (and, if configured, `redroid` / `anbox` /
 `gae`) to get the baseline curves. On smaller GPUs, trim `sweep.densities` in
 the config so over-capacity densities bail out instead of hanging.
+
+### Provisioning issuance rates
+
+`provision_concurrent` sweeps every value in
+`experiments.provision_concurrent.intervals_s` independently at each density;
+`interval=0` is a burst. An interval is eligible only when every trial provisions
+all requested tenants. The experiment selects the eligible interval with the
+highest median completed-tenants/s and reports that interval's trials as the
+provisioning curve. The CSV also retains every candidate's throughput, success
+rate, observed issue gap, and the selected interval for each density. A full run
+therefore executes `densities × intervals × trials` provisioning attempts.
+
+Every tenant JSON includes host wall and monotonic issue/readiness timestamps,
+the two readiness predicate components, the requested issue interval, and the
+observer cadence. Baselines require both `sys.boot_completed=1` and a running
+HOME launcher; an empty launcher package dynamically resolves the image's HOME
+activity. All systems use the same fixed 100 ms readiness-poll cadence, which
+adds approximately 50 ms average and at most roughly 100 ms observation delay
+plus command execution time; no polling-delay correction is subtracted.
 
 ### Config presets
 

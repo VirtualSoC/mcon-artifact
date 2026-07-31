@@ -25,8 +25,8 @@ sweep:
 
 experiments:
   provision_concurrent:
-    launcher_process: com.android.launcher3
-    interval_s: 1.0
+    intervals_s: [0, 1.0]
+    ready_poll_interval_s: 0.1
     boot_timeout_s: 180
     prime_warm: auto
     reset_before_prime: true
@@ -34,6 +34,7 @@ experiments:
     apps_dir: ${BASE_DIR}/scalebench/apps
     max_apps: 2            # only install 2 apps for the smoke
     provision_interval_s: 0.5
+    ready_poll_interval_s: 0.1
     boot_timeout_s: 180
   fps:
     pattern: random
@@ -46,8 +47,8 @@ experiments:
     max_apps: 2
     apps_dir: ${BASE_DIR}/scalebench/apps
     provision_interval_s: 0.5
+    ready_poll_interval_s: 0.1
     boot_timeout_s: 180
-
 # Baseline connection params (same as default.yaml) so the smoke config drives
 # any system. Only the one selected with --system is used.
 systems:
@@ -56,7 +57,6 @@ systems:
     enabled: true
     base_adb_port: 5555
     base_monitor_port: 60000
-    ready_interval_s: 2.0
     wait_launcher: true
     launcher_process: com.android.launcher3
   gae:
@@ -64,14 +64,12 @@ systems:
     base_adb_port: 5555
     base_console_port: 55554
     avd_prefix: avd-batch
-    ready_interval_s: 2.0
     wait_launcher: true
     launcher_process: com.android.launcher3 com.google.android.apps.nexuslauncher com.android.launcher
     no_window: true
   redroid:
     enabled: true
     base_adb_port: 5555
-    ready_interval_s: 2.0
     wait_launcher: true
     launcher_process: com.android.launcher3
     ssh_host: localhost
@@ -84,8 +82,8 @@ systems:
     enabled: true
     backend: local
     vm_name: anbox
-    ready_interval_s: 3.0
-    wait_launcher: false
+    wait_launcher: true
+    launcher_process: ""
     manage_vm: false
 
 output:

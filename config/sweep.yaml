@@ -30,9 +30,9 @@ sweep:
 
 experiments:
   provision_concurrent:
-    launcher_process: com.android.launcher3
     ready_timeout_s: 120
-    interval_s: 1.0              # seconds between successive provision requests
+    intervals_s: [0, 0.1, 0.25, 0.5, 1.0, 2.0, 4.0]  # swept at each density
+    ready_poll_interval_s: 0.1
     boot_timeout_s: 180
     prime_warm: auto             # warm pool = max(densities)+1 framework namespaces
     reset_before_prime: true     # start from a clean userdata image (reproducible)

@@ -9,14 +9,44 @@ hotplugging its virtual device (matching the paper's definition for MCon).
 
 from __future__ import annotations
 
+import statistics
 import time
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Optional
 
 from ..config import Config
 from ..schema import Record, write_records
 
 EXPERIMENT = "provision_concurrent"
+
+
+def select_best_interval(
+    throughputs: Dict[float, List[float]],
+    successes: Dict[float, int],
+    trials: int,
+) -> Optional[float]:
+    """Select the fastest interval that succeeds in every trial."""
+    eligible = [
+        interval
+        for interval, count in successes.items()
+        if count == trials and throughputs[interval]
+    ]
+    if not eligible:
+        return None
+    return max(
+        eligible,
+        key=lambda interval: (statistics.median(throughputs[interval]), -interval),
+    )
+
+
+def _actual_issue_gap(summary) -> Optional[float]:
+    issued = sorted(
+        tenant.issued_monotonic_s
+        for tenant in summary.tenants
+        if tenant.issued_monotonic_s is not None
+    )
+    gaps = [issued[index + 1] - issued[index] for index in range(len(issued) - 1)]
+    return statistics.median(gaps) if gaps else None
 
 
 def _prime_pool(cfg: Config, driver, densities: List[int]) -> None:
@@ -43,51 +73,160 @@ def _run_density(
     out_dir: Path,
     n: int,
     trials: int,
-    interval: float,
+    intervals: List[float],
+    ready_poll_interval: float,
     boot_timeout: float,
+    ready_timeout: float,
     reset_between_trials: bool,
     densities: List[int],
 ) -> tuple[bool, List[Record]]:
-    """Run `trials` trials at density n; return (all_trials_fully_ready, records).
+    """Sweep issue intervals at density n and retain the best successful setting.
 
     A density counts as OK only if EVERY trial provisions all n tenants (matches
-    the paper's max-density definition). A short settle follows a failed trial so
-    an over-capacity attempt (which may crash a worker) does not poison the next
+    the paper's max-density definition) at the selected interval. A short settle
+    follows a failed trial so an over-capacity attempt does not poison the next
     boot.
     """
     recs: List[Record] = []
-    density_ok = True
-    for t in range(trials):
-        if reset_between_trials:
-            _prime_pool(cfg, driver, densities)
+    throughputs: Dict[float, List[float]] = {interval: [] for interval in intervals}
+    successes: Dict[float, int] = {interval: 0 for interval in intervals}
+    successful_trials = {interval: [] for interval in intervals}
 
-        json_out = out_dir / f"{driver.name}_provision_n{n}_t{t}.json"
-        summary = driver.provision(n, interval=interval, boot_timeout=boot_timeout, json_out=json_out)
-        driver.teardown()
+    for interval in intervals:
+        for trial in range(trials):
+            if reset_between_trials:
+                _prime_pool(cfg, driver, densities)
 
-        if not summary:
-            print(f"[provision] N={n} trial={t}: provisioning failed")
-            density_ok = False
-            time.sleep(5)
-            continue
+            json_out = out_dir / (
+                f"{driver.name}_provision_n{n}_i{interval:g}_t{trial}.json"
+            )
+            summary = driver.provision(
+                n,
+                interval=interval,
+                ready_poll_interval=ready_poll_interval,
+                boot_timeout=boot_timeout,
+                ready_timeout=ready_timeout,
+                json_out=json_out,
+            )
+            driver.teardown()
 
-        ready = summary.ready_count
-        total = summary.total_s
-        print(f"[provision] N={n} trial={t}: ready={ready}/{n} total={total}")
+            if not summary:
+                print(
+                    f"[provision] N={n} interval={interval:g}s trial={trial}: "
+                    "provisioning failed"
+                )
+                time.sleep(5)
+                continue
 
-        if total is not None and ready == n:
+            ready = summary.ready_count
+            total = summary.total_s
+            print(
+                f"[provision] N={n} interval={interval:g}s trial={trial}: "
+                f"ready={ready}/{n} total={total}"
+            )
+            if total is None or ready != n:
+                time.sleep(5)
+                continue
+
+            successes[interval] += 1
+            throughput = n / total
+            throughputs[interval].append(throughput)
+            successful_trials[interval].append((trial, summary))
             recs.append(
                 Record(
                     system=driver.name,
                     experiment=EXPERIMENT,
                     x_name="density",
                     x_value=n,
-                    metric="total_latency_s",
-                    value=float(total),
-                    trial=t,
-                    extra={"requested": n, "ready": ready, "interval_s": interval},
+                    metric="throughput_tenants_s",
+                    value=throughput,
+                    trial=trial,
+                    extra={
+                        "issue_interval_s": interval,
+                        "requested": n,
+                    },
                 )
             )
+            actual_gap = _actual_issue_gap(summary)
+            if actual_gap is not None:
+                recs.append(
+                    Record(
+                        system=driver.name,
+                        experiment=EXPERIMENT,
+                        x_name="density",
+                        x_value=n,
+                        metric="actual_issue_gap_s",
+                        value=actual_gap,
+                        trial=trial,
+                        extra={"issue_interval_s": interval},
+                    )
+                )
+            time.sleep(2)
+
+        recs.append(
+            Record(
+                system=driver.name,
+                experiment=EXPERIMENT,
+                x_name="density",
+                x_value=n,
+                metric="success_rate",
+                value=successes[interval] / trials,
+                extra={
+                    "issue_interval_s": interval,
+                    "trials": trials,
+                },
+            )
+        )
+
+    selected = select_best_interval(throughputs, successes, trials)
+    if selected is None:
+        print(f"[provision] N={n}: no interval succeeded in every trial")
+        return False, recs
+
+    median_throughput = statistics.median(throughputs[selected])
+    median_total = statistics.median(
+        float(summary.total_s)
+        for _, summary in successful_trials[selected]
+        if summary.total_s is not None
+    )
+    print(
+        f"[provision] N={n}: selected interval={selected:g}s "
+        f"median_total={median_total:.3f}s"
+    )
+    recs.append(
+        Record(
+            system=driver.name,
+            experiment=EXPERIMENT,
+            x_name="density",
+            x_value=n,
+            metric="selected_interval_s",
+            value=selected,
+            extra={
+                "criterion": "highest median completion throughput among 100% successful candidates",
+                "median_throughput_tenants_s": median_throughput,
+                "median_total_latency_s": median_total,
+            },
+        )
+    )
+
+    for trial, summary in successful_trials[selected]:
+        recs.append(
+            Record(
+                system=driver.name,
+                experiment=EXPERIMENT,
+                x_name="density",
+                x_value=n,
+                metric="total_latency_s",
+                value=float(summary.total_s),
+                trial=trial,
+                extra={
+                    "requested": n,
+                    "ready": summary.ready_count,
+                    "interval_s": selected,
+                    "ready_poll_interval_s": ready_poll_interval,
+                },
+            )
+        )
         for tenant in summary.tenants:
             if tenant.duration_s is not None and tenant.ready:
                 recs.append(
@@ -98,23 +237,41 @@ def _run_density(
                         x_value=n,
                         metric="tenant_latency_s",
                         value=float(tenant.duration_s),
-                        trial=t,
-                        extra={"handle": tenant.handle},
+                        trial=trial,
+                        extra={
+                            "handle": tenant.handle,
+                            "interval_s": selected,
+                            "issued_at_s": tenant.issued_at_s,
+                            "ready_at_s": tenant.ready_at_s,
+                            "boot_completed": tenant.boot_completed,
+                            "launcher_started": tenant.launcher_started,
+                        },
                     )
                 )
-        if ready < n:
-            density_ok = False
-            time.sleep(5)  # extra settle: an over-capacity attempt may have crashed a worker
-        else:
-            time.sleep(2)
-    return density_ok, recs
+    return True, recs
 
 
 def run(cfg: Config, driver, out_dir: Path) -> Path:
     densities: List[int] = sorted(set(cfg.get("sweep.densities", [1, 2, 4, 8])))
     trials: int = int(cfg.get("sweep.trials", 1))
-    interval: float = float(cfg.get("experiments.provision_concurrent.interval_s", 1.0))
+    intervals = sorted(
+        set(
+            float(value)
+            for value in cfg.get(
+                "experiments.provision_concurrent.intervals_s",
+                [0, 0.1, 0.25, 0.5, 1, 2, 4],
+            )
+        )
+    )
+    if not intervals:
+        raise SystemExit("experiments.provision_concurrent.intervals_s must not be empty")
+    ready_poll_interval = float(
+        cfg.get("experiments.provision_concurrent.ready_poll_interval_s", 0.1)
+    )
     boot_timeout = float(cfg.get("experiments.provision_concurrent.boot_timeout_s", 180.0))
+    ready_timeout = float(
+        cfg.get("experiments.provision_concurrent.ready_timeout_s", boot_timeout)
+    )
     autoscale: bool = bool(cfg.get("sweep.autoscale", True))
     reset_between_trials: bool = bool(cfg.get("sweep.reset_between_trials", False))
 
@@ -130,7 +287,17 @@ def run(cfg: Config, driver, out_dir: Path) -> Path:
     for n in densities:
         print(f"[provision] density={n} ({trials} trial(s))")
         ok, recs = _run_density(
-            cfg, driver, out_dir, n, trials, interval, boot_timeout, reset_between_trials, densities
+            cfg,
+            driver,
+            out_dir,
+            n,
+            trials,
+            intervals,
+            ready_poll_interval,
+            boot_timeout,
+            ready_timeout,
+            reset_between_trials,
+            densities,
         )
         records.extend(recs)
         if ok:
@@ -151,7 +318,17 @@ def run(cfg: Config, driver, out_dir: Path) -> Path:
             mid = (lo + hi) // 2
             print(f"[provision] bisect: density={mid} (good={lo}, bad={hi})")
             ok, recs = _run_density(
-                cfg, driver, out_dir, mid, trials, interval, boot_timeout, reset_between_trials, densities
+                cfg,
+                driver,
+                out_dir,
+                mid,
+                trials,
+                intervals,
+                ready_poll_interval,
+                boot_timeout,
+                ready_timeout,
+                reset_between_trials,
+                densities,
             )
             records.extend(recs)
             if ok:

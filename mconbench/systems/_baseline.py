@@ -16,13 +16,19 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from ..config import Config
-from .base import Driver, ProvisionSummary, TenantResult
+from .base import Driver, IssueStamp, ProvisionSummary, TenantResult
+
+
+def _clock() -> float:
+    clock_id = getattr(time, "CLOCK_BOOTTIME", None)
+    return time.clock_gettime(clock_id) if clock_id is not None else time.monotonic()
 
 
 class BaselineDriver(Driver):
@@ -43,7 +49,6 @@ class BaselineDriver(Driver):
         # Connection / readiness knobs (per-system overrides under systems.<name>).
         self.base_adb_port = int(cfg.get(f"systems.{self.name}.base_adb_port", cfg.get("adb.start_port", 5555)))
         self.base_monitor_port = int(cfg.get(f"systems.{self.name}.base_monitor_port", 60000))
-        self.ready_interval = float(cfg.get(f"systems.{self.name}.ready_interval_s", 2.0))
         self.wait_launcher = bool(cfg.get(f"systems.{self.name}.wait_launcher", True))
         self.launcher_process = str(
             cfg.get(f"systems.{self.name}.launcher_process", self.launcher_process)
@@ -64,9 +69,18 @@ class BaselineDriver(Driver):
         return sorted(set(self.cfg.get("sweep.densities", []) or []))
 
     # -- lifecycle hooks (subclasses implement) -----------------------------
-    def _launch(self, n: int) -> bool:
-        """Start ``n`` instances (block until launched, not necessarily ready)."""
+    def _launch(
+        self,
+        n: int,
+        interval: float,
+        ready_poll_interval: float,
+    ) -> Optional[List[IssueStamp]]:
+        """Issue ``n`` starts and return their host timestamps in request order."""
         raise NotImplementedError
+
+    def _prepare_launch(self, n: int) -> bool:
+        """Perform unmeasured setup required before issue timestamps begin."""
+        return True
 
     def _stop(self, n: int) -> None:
         """Stop up to ``n`` running instances."""
@@ -83,7 +97,13 @@ class BaselineDriver(Driver):
     def serials(self, n: int) -> List[str]:
         return [self.serial(i) for i in range(n)]
 
-    def _resolve_serials(self, n: int, t0: float, boot_timeout: float) -> List[str]:
+    def _resolve_serials(
+        self,
+        n: int,
+        t0: float,
+        boot_timeout: float,
+        poll_interval: float,
+    ) -> List[str]:
         """Serials to wait on after launch.
 
         Deterministic systems (vsoc/gae/redroid) know their serials up front from
@@ -97,6 +117,97 @@ class BaselineDriver(Driver):
     def _sh(self, script: Path, args: List[str], timeout: Optional[float] = None) -> int:
         proc = subprocess.run(["bash", str(script), *args], env=self.env, timeout=timeout)
         return proc.returncode
+
+    def _launch_batch_script(
+        self,
+        script: Path,
+        args: List[str],
+        n: int,
+        interval: float,
+        ready_poll_interval: float,
+    ) -> Optional[List[IssueStamp]]:
+        """Run a batch launcher that writes ``index wall_time`` issue records."""
+        issue_path: Optional[Path] = None
+        endpoint_path: Optional[Path] = None
+        try:
+            with tempfile.NamedTemporaryFile(prefix=f"{self.name}-issues-", delete=False) as issue_file:
+                issue_path = Path(issue_file.name)
+            with tempfile.NamedTemporaryFile(prefix=f"{self.name}-endpoints-", delete=False) as endpoint_file:
+                endpoint_path = Path(endpoint_file.name)
+            env = dict(self.env)
+            env["MCONBENCH_ISSUE_INTERVAL_S"] = str(max(0.0, interval))
+            env["MCONBENCH_READY_POLL_INTERVAL_S"] = str(max(0.001, ready_poll_interval))
+            env["MCONBENCH_ISSUE_LOG"] = str(issue_path)
+            env["MCONBENCH_ENDPOINT_LOG"] = str(endpoint_path)
+            proc = subprocess.run(["bash", str(script), *args], env=env)
+            if proc.returncode != 0:
+                return None
+            stamps: List[IssueStamp] = []
+            endpoints: Dict[int, str] = {}
+            for line in endpoint_path.read_text().splitlines():
+                index_text, endpoint = line.split(maxsplit=1)
+                endpoints[int(index_text)] = endpoint
+            for line in issue_path.read_text().splitlines():
+                index_text, wall_text, monotonic_text = line.split(maxsplit=2)
+                index = int(index_text)
+                stamps.append(
+                    IssueStamp(
+                        index=index,
+                        wall_time_s=float(wall_text),
+                        monotonic_s=float(monotonic_text),
+                        handle_hint=endpoints.get(index),
+                    )
+                )
+            stamps.sort(key=lambda stamp: stamp.index)
+            if len(stamps) != n:
+                print(f"[{self.name}] launcher recorded {len(stamps)}/{n} issue timestamps")
+                return None
+            return stamps
+        finally:
+            if issue_path is not None:
+                issue_path.unlink(missing_ok=True)
+            if endpoint_path is not None:
+                endpoint_path.unlink(missing_ok=True)
+
+    def _schedule_launches(
+        self,
+        n: int,
+        interval: float,
+        launch_one: Callable[[int], Union[bool, str]],
+    ) -> Optional[List[IssueStamp]]:
+        """Start one worker per request, paced against absolute target times."""
+        stamps: List[Optional[IssueStamp]] = [None] * n
+        succeeded = [False] * n
+        handle_hints: List[Optional[str]] = [None] * n
+        first_target = _clock()
+
+        def _worker(index: int) -> None:
+            target = first_target + index * max(0.0, interval)
+            delay = target - _clock()
+            if delay > 0:
+                time.sleep(delay)
+            stamps[index] = IssueStamp(index, time.time(), _clock())
+            result = launch_one(index)
+            succeeded[index] = bool(result)
+            if isinstance(result, str):
+                handle_hints[index] = result
+
+        threads = [threading.Thread(target=_worker, args=(index,), daemon=True) for index in range(n)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        complete = [
+            IssueStamp(
+                index=stamp.index,
+                wall_time_s=stamp.wall_time_s,
+                monotonic_s=stamp.monotonic_s,
+                handle_hint=handle_hints[stamp.index],
+            )
+            for stamp in stamps
+            if stamp is not None
+        ]
+        return complete if len(complete) == n and all(succeeded) else None
 
     # -- neutral contract ---------------------------------------------------
     def reset(self, capacity: Optional[int] = None) -> None:
@@ -113,7 +224,9 @@ class BaselineDriver(Driver):
         self,
         n: int,
         interval: float = 1.0,
+        ready_poll_interval: float = 0.1,
         boot_timeout: float = 180.0,
+        ready_timeout: Optional[float] = None,
         json_out: Optional[Path] = None,
     ) -> Optional[ProvisionSummary]:
         """Cold-boot ``n`` instances concurrently and wait for each to become ready.
@@ -123,21 +236,52 @@ class BaselineDriver(Driver):
         starts when the launch request is issued (not during overlay cleanup).
         """
         self._remove(n)                # ensure a cold boot (fresh per-instance state)
-        t0 = time.time()
-        if not self._launch(n):
+        if not self._prepare_launch(n):
+            return None
+        tenant_timeout = float(ready_timeout if ready_timeout is not None else boot_timeout)
+        self.env["MCONBENCH_BOOT_TIMEOUT_S"] = str(boot_timeout)
+        self.env["MCONBENCH_READY_TIMEOUT_S"] = str(tenant_timeout)
+        issues = self._launch(n, interval, ready_poll_interval)
+        if not issues:
             self._stop(n)
             return None
         self._current_n = n
 
-        serials = self._resolve_serials(n, t0, boot_timeout)
-        results = self._wait_ready(serials, t0, boot_timeout)
+        first_issue = min(issues, key=lambda stamp: stamp.monotonic_s)
+        hinted_serials = [issue.handle_hint for issue in issues]
+        if len(hinted_serials) == n and all(hinted_serials):
+            serials = [str(serial) for serial in hinted_serials]
+        else:
+            serials = self._resolve_serials(
+                n,
+                first_issue.wall_time_s,
+                boot_timeout,
+                ready_poll_interval,
+            )
+        results = self._wait_ready(serials, issues, tenant_timeout, ready_poll_interval)
         tenants = [
-            TenantResult(handle=s, ready=results[s]["ready"], duration_s=results[s]["duration_s"])
-            for s in serials
+            TenantResult(
+                handle=serial,
+                ready=results[serial]["ready"],
+                duration_s=results[serial]["duration_s"],
+                issued_at_s=results[serial]["issued_at_s"],
+                ready_at_s=results[serial]["ready_at_s"],
+                issued_monotonic_s=results[serial]["issued_monotonic_s"],
+                ready_monotonic_s=results[serial]["ready_monotonic_s"],
+                boot_completed=results[serial]["boot_completed"],
+                launcher_started=results[serial]["launcher_started"],
+            )
+            for serial in serials
         ]
-        ready_durs = [t.duration_s for t in tenants if t.ready and t.duration_s is not None]
-        total_s = max(ready_durs) if ready_durs else None
-        summary = ProvisionSummary(total_s=total_s, tenants=tenants)
+        ready_times = [t.ready_monotonic_s for t in tenants if t.ready and t.ready_monotonic_s is not None]
+        total_s = max(ready_times) - first_issue.monotonic_s if ready_times else None
+        summary = ProvisionSummary(
+            total_s=total_s,
+            tenants=tenants,
+            issue_interval_s=interval,
+            ready_poll_interval_s=ready_poll_interval,
+            ready_timeout_s=tenant_timeout,
+        )
         if json_out:
             self._write_summary(json_out, n, interval, summary)
         return summary
@@ -148,44 +292,100 @@ class BaselineDriver(Driver):
             self._current_n = 0
 
     # -- readiness ----------------------------------------------------------
-    def _wait_ready(self, serials: List[str], t0: float, boot_timeout: float) -> Dict[str, Dict[str, Any]]:
+    def _wait_ready(
+        self,
+        serials: List[str],
+        issues: List[IssueStamp],
+        boot_timeout: float,
+        poll_interval: float,
+    ) -> Dict[str, Dict[str, Any]]:
         adb = self._adb()
-        results: Dict[str, Dict[str, Any]] = {s: {"ready": False, "duration_s": None} for s in serials}
-        pending = list(serials)
-        deadline = t0 + boot_timeout
-        while pending:
-            for s in list(pending):
-                subprocess.run(["adb", "connect", s], capture_output=True, text=True)
-                if self._is_ready(adb, s):
-                    dur = time.time() - t0
-                    results[s] = {"ready": True, "duration_s": dur}
-                    print(f"[{self.name}] {s} ready after {dur:.1f}s")
-                    pending.remove(s)
-            if not pending:
-                break
-            if time.time() >= deadline:
-                print(f"[{self.name}] readiness timeout ({boot_timeout:.0f}s); pending: {pending}")
-                break
-            time.sleep(self.ready_interval)
+        results: Dict[str, Dict[str, Any]] = {}
+        result_lock = threading.Lock()
+
+        def _worker(serial: str, issue: IssueStamp) -> None:
+            deadline = issue.monotonic_s + boot_timeout
+            next_poll = _clock()
+            boot_completed = False
+            launcher_started = False
+            subprocess.run(["adb", "connect", serial], capture_output=True, text=True)
+            while _clock() < deadline:
+                boot_completed, launcher_started = self._readiness_state(adb, serial)
+                if boot_completed and launcher_started:
+                    ready_wall = time.time()
+                    ready_monotonic = _clock()
+                    duration = ready_monotonic - issue.monotonic_s
+                    with result_lock:
+                        results[serial] = {
+                            "ready": True,
+                            "duration_s": duration,
+                            "issued_at_s": issue.wall_time_s,
+                            "ready_at_s": ready_wall,
+                            "issued_monotonic_s": issue.monotonic_s,
+                            "ready_monotonic_s": ready_monotonic,
+                            "boot_completed": True,
+                            "launcher_started": True,
+                        }
+                    print(f"[{self.name}] {serial} ready after {duration:.3f}s")
+                    return
+                next_poll += max(0.001, poll_interval)
+                delay = next_poll - _clock()
+                if delay > 0:
+                    time.sleep(delay)
+            with result_lock:
+                results[serial] = {
+                    "ready": False,
+                    "duration_s": None,
+                    "issued_at_s": issue.wall_time_s,
+                    "ready_at_s": None,
+                    "issued_monotonic_s": issue.monotonic_s,
+                    "ready_monotonic_s": None,
+                    "boot_completed": boot_completed,
+                    "launcher_started": launcher_started,
+                }
+            print(f"[{self.name}] {serial} readiness timeout after {boot_timeout:.0f}s")
+
+        threads = [
+            threading.Thread(target=_worker, args=(serial, issue), daemon=True)
+            for serial, issue in zip(serials, issues)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
         return results
 
     def _boot_completed(self, adb, serial: str) -> bool:
-        for prop in ("sys.boot_completed", "dev.bootcomplete"):
-            res = adb.adb_shell(serial, ["getprop", prop], print_output=False, timeout=10)
-            if (res.get("stdout") or "").strip().strip("[]").strip() == "1":
-                return True
-        ps = adb.adb_shell(serial, ["ps", "-A"], print_output=False, timeout=10)
-        return "system_server" in (ps.get("stdout") or "")
+        res = adb.adb_shell(serial, ["getprop", "sys.boot_completed"], print_output=False, timeout=10)
+        return (res.get("stdout") or "").strip().strip("[]").strip() == "1"
 
-    def _is_ready(self, adb, serial: str) -> bool:
-        if not self._boot_completed(adb, serial):
+    def _launcher_started(self, adb, serial: str) -> bool:
+        candidates = list(self.launcher_candidates)
+        if not candidates:
+            resolved = adb.adb_shell(
+                serial,
+                [
+                    "cmd", "package", "resolve-activity", "--brief", "--user", "0",
+                    "-a", "android.intent.action.MAIN", "-c", "android.intent.category.HOME",
+                ],
+                print_output=False,
+                timeout=10,
+            )
+            component = (resolved.get("stdout") or "").strip().splitlines()
+            if component:
+                candidates = [component[-1].split("/", 1)[0]]
+        if not candidates:
             return False
-        if self.wait_launcher and self.launcher_candidates:
-            ps = adb.adb_shell(serial, ["ps", "-A"], print_output=False, timeout=10)
-            ps_out = ps.get("stdout") or ""
-            if not any(cand in ps_out for cand in self.launcher_candidates):
-                return False
-        return True
+        ps = adb.adb_shell(serial, ["ps", "-A"], print_output=False, timeout=10)
+        ps_out = ps.get("stdout") or ""
+        return any(candidate in ps_out for candidate in candidates)
+
+    def _readiness_state(self, adb, serial: str) -> tuple[bool, bool]:
+        boot_completed = self._boot_completed(adb, serial)
+        if not boot_completed:
+            return False, False
+        launcher_started = self._launcher_started(adb, serial) if self.wait_launcher else True
+        return boot_completed, launcher_started
 
     # -- deployment ---------------------------------------------------------
     def deploy(self, app_files: List[Path], handles: List[Any]) -> Dict[str, Any]:
@@ -338,8 +538,20 @@ class BaselineDriver(Driver):
             "ready_count": summary.ready_count,
             "total_s": summary.total_s,
             "interval_s": interval,
+            "ready_poll_interval_s": summary.ready_poll_interval_s,
+            "ready_timeout_s": summary.ready_timeout_s,
             "tenants": [
-                {"handle": t.handle, "ready": t.ready, "duration_s": t.duration_s}
+                {
+                    "handle": t.handle,
+                    "ready": t.ready,
+                    "duration_s": t.duration_s,
+                    "issued_at_s": t.issued_at_s,
+                    "ready_at_s": t.ready_at_s,
+                    "issued_monotonic_s": t.issued_monotonic_s,
+                    "ready_monotonic_s": t.ready_monotonic_s,
+                    "boot_completed": t.boot_completed,
+                    "launcher_started": t.launcher_started,
+                }
                 for t in summary.tenants
             ],
         }

@@ -31,9 +31,9 @@ sweep:
 
 experiments:
   provision_concurrent:
-    launcher_process: com.android.launcher3
     ready_timeout_s: 600                # boot_completed=1 AND launcher started
-    interval_s: 1.0                     # seconds between successive provision requests
+    intervals_s: [0, 0.1, 0.25, 0.5, 1.0, 2.0, 4.0]  # swept independently at every density
+    ready_poll_interval_s: 0.1          # shared observer cadence for every system
     boot_timeout_s: 180                 # max wait for the root instance to boot
     prime_warm: auto                    # pre-create the namespace pool (auto = max density + 1)
     reset_before_prime: true            # restore a clean userdata before priming (reproducible)
@@ -43,6 +43,7 @@ experiments:
     apps_dir: ${BASE_DIR}/scalebench/apps  # top-50 APKs/XAPKs on disk (not ram-staged)
     max_apps: null                      # null = all apps; set small (e.g. 5) for quick checks
     provision_interval_s: 0.5           # pacing while bringing tenants up (NOT the measured metric)
+    ready_poll_interval_s: 0.1
     boot_timeout_s: 180
     # MCon deploys by installing each app ONCE on user 0, then logically mapping it
     # into each tenant via `pm install-existing` (near-O(1)); tenants map in parallel.
@@ -59,6 +60,7 @@ experiments:
     max_apps: null                      # null = full corpus; set small for quick checks
     apps_dir: ${BASE_DIR}/scalebench/apps  # defaults to the deploy corpus if unset
     provision_interval_s: 0.5           # pacing while bringing tenants up (not measured)
+    ready_poll_interval_s: 0.1
     boot_timeout_s: 180
     metric_source: gfxinfo              # dumpsys gfxinfo -> frame-time histogram -> FPS
   warmpool:
@@ -74,13 +76,14 @@ experiments:
 # tenant and select their own connection params here. Pick the system with
 # `--system <name>` on the CLI. `enabled` documents readiness of each driver.
 systems:
-  mcon:    { enabled: true }
+  mcon:
+    enabled: true
+    launcher_process: com.android.launcher3
   # vSoC: local QEMU per tenant via platform/vsoc.sh (stride-1 adb ports).
   vsoc:
     enabled: true
     base_adb_port: 5555          # instance i -> localhost:(base_adb_port + i)
     base_monitor_port: 60000     # QEMU monitor base (pass-through to vsoc.sh)
-    ready_interval_s: 2.0        # readiness poll interval (per-serial getprop)
     wait_launcher: true          # require launcher process, not just boot_completed
     launcher_process: com.android.launcher3
   # Redroid: Docker containers inside an outer QEMU VM, driven over SSH. The
@@ -91,7 +94,6 @@ systems:
   redroid:
     enabled: true
     base_adb_port: 5555          # container i -> localhost:(base_adb_port + i)
-    ready_interval_s: 2.0
     wait_launcher: true
     launcher_process: com.android.launcher3
     ssh_host: localhost          # or $REDROID_SSH_HOST
@@ -118,10 +120,8 @@ systems:
                                  # Must be >=1 to inject the real GPU on bare
                                  # metal, else graphics init hangs at boot.
     vm_name: anbox               # only used when backend=multipass
-    control_script: ""           # default: <scalebench>/platform/anbox_test.sh
-    ready_interval_s: 3.0
-    wait_launcher: false         # Anbox has no launcher3; use boot_completed only
-    launcher_process: ""        # unused when wait_launcher=false
+    wait_launcher: true          # resolve the image's HOME activity dynamically
+    launcher_process: ""        # empty = resolve android.intent.category.HOME
     manage_vm: false             # multipass only: start <vm_name> if not running
     vm_boot_timeout_s: 300
   # GAE (Google Android Emulator): AVDs via platform/avd.sh. adb port stride 2
@@ -131,7 +131,6 @@ systems:
     base_adb_port: 5555          # emulator i -> localhost:(base_adb_port + 2*i)
     base_console_port: 55554     # emulator console base (pass-through to avd.sh)
     avd_prefix: avd-batch        # AVD name prefix (rm scope: <prefix>-1..N)
-    ready_interval_s: 2.0
     wait_launcher: true
     # GAE images ship different launchers; accept any of these (space/comma list).
     launcher_process: com.android.launcher3 com.google.android.apps.nexuslauncher com.android.launcher

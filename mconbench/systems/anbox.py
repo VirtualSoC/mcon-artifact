@@ -12,11 +12,10 @@ In both modes Android containers are created by ``amc``; adb reaches them via
     tenants are *discovered* from ``adb devices`` (127.0.0.1:*), not computed
     from a fixed port map (``_resolve_serials`` override).
 
-Launch reuses the existing control script (``platform/anbox_test.sh start N``),
-which creates the containers and runs ``anbox-connect``. Teardown is done
-directly via ``amc`` (list -> stop -> delete) plus killing the host-side
-``anbox-connect``/tmux sessions, which is more robust than the script's
-timestamped-file ``stop-*`` verbs.
+The measured path launches each container from a host-paced Python worker,
+waits for its session, starts ``anbox-connect``, and returns that request's exact
+ADB endpoint. Teardown uses ``amc`` directly (list -> stop -> delete) and kills
+the host-side ``anbox-connect``/tmux sessions.
 
 CAVEATS:
     * Local mode requires ``amc`` to be trusted for the current user.
@@ -28,6 +27,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import time
@@ -47,11 +47,6 @@ class AnboxDriver(BaselineDriver):
         if self.backend not in {"local", "multipass"}:
             raise SystemExit("anbox: systems.anbox.backend must be 'local' or 'multipass'")
         self.vm_name = str(cfg.get("systems.anbox.vm_name", "anbox"))
-        control = cfg.get("systems.anbox.control_script") or ""
-        self.control_script = (
-            os.fspath(control) if control and "${" not in str(control)
-            else str(self.scalebench_dir / "platform" / "anbox_test.sh")
-        )
         self.manage_vm = bool(cfg.get("systems.anbox.manage_vm", False))
         self.vm_boot_timeout = float(cfg.get("systems.anbox.vm_boot_timeout_s", 300.0))
         # On a bare-metal appliance the trusted admin interface is the root UNIX
@@ -148,6 +143,23 @@ class AnboxDriver(BaselineDriver):
             env=self.env,
         )
 
+    def _gateway_share(self, session_id: str) -> subprocess.CompletedProcess:
+        command = f"anbox-cloud-appliance.gateway session share {shlex.quote(session_id)}"
+        if self.backend == "local":
+            prefix = ["sudo", "-n"] if self.amc_sudo else []
+            return subprocess.run(
+                [*prefix, "anbox-cloud-appliance.gateway", "session", "share", session_id],
+                capture_output=True,
+                text=True,
+                env=self.env,
+            )
+        return subprocess.run(
+            ["multipass", "exec", self.vm_name, "--", "bash", "-lc", f"sudo {command}"],
+            capture_output=True,
+            text=True,
+            env=self.env,
+        )
+
     # -- teardown (direct amc, robust) -------------------------------------
     def _list_containers(self) -> List[str]:
         res = self._amc("ls")
@@ -184,9 +196,82 @@ class AnboxDriver(BaselineDriver):
         # Un-measured: bring the outer VM up before the measured provision window.
         self._ensure_vm()
 
-    def _launch(self, n: int) -> bool:
+    def _launch(self, n: int, interval: float, ready_poll_interval: float):
         self._ensure_vm()
-        return self._sh(self.control_script, ["start", str(n)]) == 0
+        ready_timeout = float(self.env.get("MCONBENCH_READY_TIMEOUT_S", 180.0))
+        return self._schedule_launches(
+            n,
+            interval,
+            lambda index: self._launch_one(index, ready_poll_interval, ready_timeout),
+        )
+
+    def _launch_one(self, index: int, poll_interval: float, timeout: float):
+        deadline = time.monotonic() + timeout
+        launch = self._amc(
+            "launch jammy:android15:amd64 --no-wait "
+            f"--enable-graphics --gpu-type nvidia --gpu-slots {self.gpu_slots} "
+            "--enable-streaming --memory 3GB --disk-size 10GB --cpus 1"
+        )
+        if launch.returncode != 0:
+            print(f"[anbox] launch {index} failed: {(launch.stderr or launch.stdout).strip()}")
+            return False
+        match = re.search(r"(?m)^([a-z0-9]{20,})\s*$", launch.stdout or "")
+        if not match:
+            print(f"[anbox] launch {index}: unable to parse container id")
+            return False
+        container_id = match.group(1)
+
+        session_id = ""
+        while time.monotonic() < deadline:
+            listing = self._amc("ls")
+            line = next(
+                (candidate for candidate in (listing.stdout or "").splitlines() if container_id in candidate),
+                "",
+            )
+            if " running " in line:
+                session_match = re.search(r"session=([a-z0-9]+)", line)
+                if session_match:
+                    session_id = session_match.group(1)
+                    break
+            time.sleep(max(0.001, poll_interval))
+        if not session_id:
+            print(f"[anbox] {container_id} did not reach running with a session")
+            return False
+
+        shared = self._gateway_share(session_id)
+        url_match = re.search(r"https://\S+", shared.stdout or "")
+        if shared.returncode != 0 or not url_match:
+            print(f"[anbox] {container_id}: unable to share session {session_id}")
+            return False
+
+        session_name = f"anbox_{index + 1}"
+        log_path = self.scalebench_dir / "platform" / "anbox_connect_logs" / f"session_{index + 1}.log"
+        subprocess.run(["tmux", "kill-session", "-t", session_name], capture_output=True)
+        command = f"anbox-connect {shlex.quote(url_match.group(0))} -k 2>&1 | tee -a {shlex.quote(str(log_path))}"
+        started = subprocess.run(
+            ["tmux", "new-session", "-d", "-s", session_name, command],
+            capture_output=True,
+            text=True,
+            env=self.env,
+        )
+        if started.returncode != 0:
+            print(f"[anbox] {container_id}: unable to start anbox-connect")
+            return False
+
+        while time.monotonic() < deadline:
+            pane = subprocess.run(
+                ["tmux", "capture-pane", "-t", session_name, "-p"],
+                capture_output=True,
+                text=True,
+            )
+            endpoint_match = re.search(r"127\.0\.0\.1:[0-9]+", pane.stdout or "")
+            if endpoint_match:
+                endpoint = endpoint_match.group(0)
+                subprocess.run(["adb", "connect", endpoint], capture_output=True, text=True)
+                return endpoint
+            time.sleep(max(0.001, poll_interval))
+        print(f"[anbox] {container_id}: adb endpoint did not appear")
+        return False
 
     def _stop(self, n: int) -> None:
         self._cleanup()
@@ -197,7 +282,13 @@ class AnboxDriver(BaselineDriver):
         self._ensure_vm()
         self._cleanup()
 
-    def _resolve_serials(self, n: int, t0: float, boot_timeout: float) -> List[str]:
+    def _resolve_serials(
+        self,
+        n: int,
+        t0: float,
+        boot_timeout: float,
+        poll_interval: float,
+    ) -> List[str]:
         """Discover the dynamically-assigned adb serials from `adb devices`."""
         adb = self._adb()
         deadline = t0 + boot_timeout
@@ -205,5 +296,5 @@ class AnboxDriver(BaselineDriver):
             serials = adb.get_adb_devices() or []
             if len(serials) >= n or time.time() >= deadline:
                 return serials[:n]
-            time.sleep(self.ready_interval)
+            time.sleep(max(0.001, poll_interval))
 

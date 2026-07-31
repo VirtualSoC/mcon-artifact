@@ -32,7 +32,7 @@ from typing import Any, Dict, Iterable, List
 
 SYSTEMS = ("mcon", "redroid", "anbox", "vsoc", "gae")
 
-# Experiment ids map 1:1 to the five in-scope paper figures.
+# Experiment ids cover the paper figures.
 EXPERIMENTS = (
     "provision_concurrent",   # -> fig/container_boot_time.pdf
     "provision_under_load",   # -> fig/container_provision.pdf
@@ -51,6 +51,10 @@ METRICS = {
     "deploy_total_s": "s",      # deploy: all apps on all N tenants
     "avg_fps": "fps",           # fps: mean FPS across successful apps
     "max_density": "count",     # fps/warmpool: highest N that survives all trials
+    "success_rate": "ratio",    # provision candidate's fraction of fully-ready trials
+    "throughput_tenants_s": "tenants/s", # provision candidate completion throughput
+    "actual_issue_gap_s": "s",  # observed median gap between request timestamps
+    "selected_interval_s": "s", # best fully-successful interval at each density
 }
 
 CSV_HEADER = [

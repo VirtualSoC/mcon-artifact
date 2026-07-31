@@ -110,7 +110,10 @@ def plot_series(ax, series: Series, xlabel: str, ylabel: str, xlog: bool = True,
     if all_x:
         ticks = sorted(all_x)
         ax.set_xticks(ticks)
-        ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _pos: f"{int(round(v))}"))
+        if xlog:
+            ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _pos: f"{int(round(v))}"))
+        else:
+            ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _pos: f"{v:g}"))
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.legend()

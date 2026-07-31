@@ -7,6 +7,8 @@ shift || true
 COUNT=${1:-1}
 BASE_MONITOR_PORT=${2:-55555}
 BASE_ADB_PORT=${3:-5555}
+ISSUE_INTERVAL_S=${MCONBENCH_ISSUE_INTERVAL_S:-0}
+ISSUE_LOG=${MCONBENCH_ISSUE_LOG:-}
 
 LOG_DIR="${BASE_DIR}/log"
 mkdir -p "${LOG_DIR}"
@@ -142,9 +144,18 @@ remove_instances() {
 run_instances() {
     pushd "${BASE_DIR}" >/dev/null
     ulimit -n 100000
+    local batch_start
+    batch_start=$(cut -d' ' -f1 /proc/uptime)
     for ((i=0; i<COUNT; i++)); do
+        local target now delay issued issued_monotonic
+        target=$(awk -v start="${batch_start}" -v index="${i}" -v interval="${ISSUE_INTERVAL_S}" 'BEGIN { printf "%.9f", start + index * interval }')
+        now=$(cut -d' ' -f1 /proc/uptime)
+        delay=$(awk -v target="${target}" -v now="${now}" 'BEGIN { d = target - now; if (d > 0) printf "%.9f", d; else print "0" }')
+        [[ "${delay}" == "0" ]] || sleep "${delay}"
+        issued=$(date +%s.%N)
+        issued_monotonic=$(cut -d' ' -f1 /proc/uptime)
+        [[ -z "${ISSUE_LOG}" ]] || printf '%d %s %s\n' "${i}" "${issued}" "${issued_monotonic}" >> "${ISSUE_LOG}"
         start_instance "${i}" $((BASE_MONITOR_PORT + i)) $((BASE_ADB_PORT + i)) || true
-        sleep 1
     done
     echo "$(date) INFO: launched ${COUNT} instance(s). Monitor ports ${BASE_MONITOR_PORT}..$((BASE_MONITOR_PORT + COUNT - 1)), ADB ports ${BASE_ADB_PORT}..$((BASE_ADB_PORT + COUNT - 1))" | tee -a "${LOG_DIR}/vsoc_multi_summary.log"
     echo "Connect via: adb connect localhost:${BASE_ADB_PORT}" | tee -a "${LOG_DIR}/vsoc_multi_summary.log"

@@ -51,8 +51,17 @@ class GAEDriver(BaselineDriver):
     def _args(self):
         return [str(self.base_adb_port), str(self.base_console_port), self.avd_prefix]
 
-    def _launch(self, n: int) -> bool:
-        return self._sh(self.script, ["run", str(n), *self._args()]) == 0
+    def _prepare_launch(self, n: int) -> bool:
+        return self._sh(self.script, ["prepare", str(n), *self._args()]) == 0
+
+    def _launch(self, n: int, interval: float, ready_poll_interval: float):
+        return self._launch_batch_script(
+            self.script,
+            ["launch", str(n), *self._args()],
+            n,
+            interval,
+            ready_poll_interval,
+        )
 
     def _stop(self, n: int) -> None:
         self._sh(self.script, ["stop", str(n), *self._args()])

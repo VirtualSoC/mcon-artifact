@@ -52,7 +52,9 @@ def run(cfg: Config, driver, out_dir: Path) -> Path:
     apps_dir = Path(cfg.get("experiments.deploy.apps_dir"))
     max_apps = cfg.get("experiments.deploy.max_apps")
     interval = float(cfg.get("experiments.deploy.provision_interval_s", 0.5))
+    ready_poll_interval = float(cfg.get("experiments.deploy.ready_poll_interval_s", 0.1))
     boot_timeout = float(cfg.get("experiments.deploy.boot_timeout_s", 180.0))
+    ready_timeout = float(cfg.get("experiments.deploy.ready_timeout_s", boot_timeout))
 
     if not apps_dir.exists():
         raise SystemExit(f"apps_dir not found: {apps_dir}")
@@ -84,7 +86,14 @@ def run(cfg: Config, driver, out_dir: Path) -> Path:
                 break
 
             json_out = out_dir / f"{driver.name}_deploy_n{n}_t{t}.json"
-            summary = driver.provision(n, interval=interval, boot_timeout=boot_timeout, json_out=json_out)
+            summary = driver.provision(
+                n,
+                interval=interval,
+                ready_poll_interval=ready_poll_interval,
+                boot_timeout=boot_timeout,
+                ready_timeout=ready_timeout,
+                json_out=json_out,
+            )
             handles = summary.ready_handles() if summary else []
             if len(handles) < n:
                 print(f"[deploy] N={n} trial={t}: only {len(handles)}/{n} tenants ready; skipping")

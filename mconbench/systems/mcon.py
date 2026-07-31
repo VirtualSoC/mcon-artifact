@@ -48,6 +48,10 @@ class MConDriver(Driver):
         self.env.setdefault("MONITOR_PORT", str(cfg.get("adb.monitor_port", 55555)))
         self.env.setdefault("BRIDGE_PORT", str(cfg.get("adb.bridge_port", 5555)))
         self.env.setdefault("LAUNCHER_TIMEOUT", str(cfg.get("mcon.launcher_timeout_s", 600)))
+        self.env.setdefault(
+            "LAUNCHER_PROCESS",
+            str(cfg.get("systems.mcon.launcher_process", "com.android.launcher3")),
+        )
 
         # Cache of (user_id, package) whose runtime permissions we've pre-granted
         # (see _grant_permissions) so we grant once, not on every FPS round.
@@ -85,11 +89,19 @@ class MConDriver(Driver):
         self,
         count: int,
         interval: float = 1.0,
+        ready_poll_interval: float = 0.1,
+        ready_timeout: Optional[float] = None,
         profiles_file: Optional[Path] = None,
         json_out: Optional[Path] = None,
     ) -> Optional[Dict[str, Any]]:
         """Provision `count` tenants; return the structured JSON summary."""
-        args = ["hotplug", str(count), "--interval", str(interval)]
+        args = [
+            "hotplug", str(count),
+            "--interval", str(interval),
+            "--ready-poll-interval", str(ready_poll_interval),
+        ]
+        if ready_timeout is not None:
+            args += ["--ready-timeout", str(ready_timeout)]
         if profiles_file:
             args += ["--profiles-file", str(profiles_file)]
         if json_out:
@@ -120,7 +132,9 @@ class MConDriver(Driver):
         self,
         n: int,
         interval: float = 1.0,
+        ready_poll_interval: float = 0.1,
         boot_timeout: float = 180.0,
+        ready_timeout: Optional[float] = None,
         json_out: Optional[Path] = None,
     ) -> Optional[ProvisionSummary]:
         """Boot the root instance and hotplug ``n`` tenants onto the warm pool.
@@ -131,7 +145,13 @@ class MConDriver(Driver):
         if not self.boot(count=1, boot_timeout=boot_timeout):
             self.stop()
             return None
-        summary = self.hotplug(n, interval=interval, json_out=json_out)
+        summary = self.hotplug(
+            n,
+            interval=interval,
+            ready_poll_interval=ready_poll_interval,
+            ready_timeout=ready_timeout,
+            json_out=json_out,
+        )
         if not summary:
             return None
         tenants = [
@@ -139,10 +159,22 @@ class MConDriver(Driver):
                 handle=t.get("user_id"),
                 ready=bool(t.get("ready")),
                 duration_s=t.get("duration_s"),
+                issued_at_s=t.get("issued_at_s"),
+                ready_at_s=t.get("ready_at_s"),
+                issued_monotonic_s=t.get("issued_monotonic_s"),
+                ready_monotonic_s=t.get("ready_monotonic_s"),
+                boot_completed=True,
+                launcher_started=bool(t.get("ready")),
             )
             for t in summary.get("tenants", [])
         ]
-        return ProvisionSummary(total_s=summary.get("total_s"), tenants=tenants)
+        return ProvisionSummary(
+            total_s=summary.get("total_s"),
+            tenants=tenants,
+            issue_interval_s=interval,
+            ready_poll_interval_s=ready_poll_interval,
+            ready_timeout_s=ready_timeout,
+        )
 
     def teardown(self) -> None:
         self.stop()

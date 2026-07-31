@@ -38,6 +38,7 @@ experiments:
     max_apps: 12
     apps_dir: ${BASE_DIR}/scalebench/apps
     provision_interval_s: 0.5
+    ready_poll_interval_s: 0.1
     boot_timeout_s: 180
 
 output:

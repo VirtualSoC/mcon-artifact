@@ -140,8 +140,12 @@ class RedroidDriver(BaselineDriver):
         # Un-measured: bring the outer VM up (baselines can't pre-warm containers).
         self._ensure_vm()
 
-    def _launch(self, n: int) -> bool:
-        return self._init("run", str(n)) == 0
+    def _launch(self, n: int, interval: float, ready_poll_interval: float):
+        return self._schedule_launches(
+            n,
+            interval,
+            lambda index: self._init("run", "1", str(self.base_adb_port + index)) == 0,
+        )
 
     def _stop(self, n: int) -> None:
         self._init("stop")

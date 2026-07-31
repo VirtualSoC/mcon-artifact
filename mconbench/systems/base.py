@@ -23,6 +23,16 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
+@dataclass(frozen=True)
+class IssueStamp:
+    """Host timestamps captured immediately before a provision request."""
+
+    index: int
+    wall_time_s: float
+    monotonic_s: float
+    handle_hint: Optional[str] = None
+
+
 @dataclass
 class TenantResult:
     """Outcome of provisioning a single tenant."""
@@ -30,6 +40,12 @@ class TenantResult:
     handle: Any                       # MCon: Android user id; baselines: adb serial
     ready: bool                       # did it reach operational (boot_completed + launcher)?
     duration_s: Optional[float] = None  # request-issued -> operational, seconds
+    issued_at_s: Optional[float] = None
+    ready_at_s: Optional[float] = None
+    issued_monotonic_s: Optional[float] = None
+    ready_monotonic_s: Optional[float] = None
+    boot_completed: bool = False
+    launcher_started: bool = False
 
 
 @dataclass
@@ -38,6 +54,9 @@ class ProvisionSummary:
 
     total_s: Optional[float]          # first request issued -> last tenant operational
     tenants: List[TenantResult] = field(default_factory=list)
+    issue_interval_s: Optional[float] = None
+    ready_poll_interval_s: Optional[float] = None
+    ready_timeout_s: Optional[float] = None
 
     @property
     def ready_count(self) -> int:
@@ -81,7 +100,9 @@ class Driver(ABC):
         self,
         n: int,
         interval: float = 1.0,
+        ready_poll_interval: float = 0.1,
         boot_timeout: float = 180.0,
+        ready_timeout: Optional[float] = None,
         json_out: Optional[Path] = None,
     ) -> Optional[ProvisionSummary]:
         """Bring up ``n`` tenants (measured) and leave them running.

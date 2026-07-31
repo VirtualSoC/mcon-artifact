@@ -178,6 +178,11 @@ fi
 
 N="$2"
 ADB_OUTPUT="${3:-$CONNECT_LOG_DIR/anbox_adb_${N}_${TS}.txt}"
+ISSUE_INTERVAL_S=${MCONBENCH_ISSUE_INTERVAL_S:-0}
+ISSUE_LOG=${MCONBENCH_ISSUE_LOG:-}
+READY_POLL_INTERVAL_S=${MCONBENCH_READY_POLL_INTERVAL_S:-0.1}
+ENDPOINT_LOG=${MCONBENCH_ENDPOINT_LOG:-}
+BOOT_TIMEOUT_S=${MCONBENCH_BOOT_TIMEOUT_S:-180}
 
 # Create required files
 touch "$PID_FILE" "$CONTAINER_FILE" "$ADB_OUTPUT"
@@ -252,8 +257,17 @@ log "[INFO] amc ls monitor thread PID = $LS_MONITOR_PID"
 
 
 CONTAINER_IDS=()
+ISSUE_BATCH_START=$(cut -d' ' -f1 /proc/uptime)
 
 for ((i=1; i<=N; i++)); do
+    ISSUE_INDEX=$((i-1))
+    ISSUE_TARGET=$(awk -v start="${ISSUE_BATCH_START}" -v index="${ISSUE_INDEX}" -v interval="${ISSUE_INTERVAL_S}" 'BEGIN { printf "%.9f", start + index * interval }')
+    ISSUE_NOW=$(cut -d' ' -f1 /proc/uptime)
+    ISSUE_DELAY=$(awk -v target="${ISSUE_TARGET}" -v now="${ISSUE_NOW}" 'BEGIN { d = target - now; if (d > 0) printf "%.9f", d; else print "0" }')
+    [[ "${ISSUE_DELAY}" == "0" ]] || sleep "${ISSUE_DELAY}"
+    ISSUE_TIME=$(date +%s.%N)
+    ISSUE_MONOTONIC=$(cut -d' ' -f1 /proc/uptime)
+    [[ -z "${ISSUE_LOG}" ]] || printf '%d %s %s\n' "${ISSUE_INDEX}" "${ISSUE_TIME}" "${ISSUE_MONOTONIC}" >> "${ISSUE_LOG}"
     START_TS=$(date '+%F %T')
     log "[INFO] starting to create container #$i..."
 
@@ -326,8 +340,7 @@ fi
 # -------------------------------------------------------------
 echo "[INFO] waiting for containers to be running..."
 
-MAX_WAIT=$((120 * N))
-WAIT=0
+RUNNING_DEADLINE=$(awk -v now="$(cut -d' ' -f1 /proc/uptime)" -v timeout="${BOOT_TIMEOUT_S}" 'BEGIN { printf "%.9f", now + timeout }')
 
 while true; do
     LS=$(amc_cmd ls)
@@ -345,7 +358,9 @@ while true; do
         break
     fi
 
-    if (( WAIT >= MAX_WAIT )); then
+    RUNNING_NOW=$(cut -d' ' -f1 /proc/uptime)
+    TIMED_OUT=$(awk -v now="${RUNNING_NOW}" -v deadline="${RUNNING_DEADLINE}" 'BEGIN { print (now >= deadline) ? 1 : 0 }')
+    if (( TIMED_OUT )); then
         echo "[ERROR] some containers are still not running"
         if kill -0 "$LS_MONITOR_PID" 2>/dev/null; then
             kill -9 "$LS_MONITOR_PID"
@@ -353,15 +368,12 @@ while true; do
         exit 1
     fi
 
-    sleep 3
-    WAIT=$((WAIT+3))
+    sleep "${READY_POLL_INTERVAL_S}"
 done
 
 # -------------------------------------------------------------
 # [NEW] shut down the amc ls monitor thread
 # -------------------------------------------------------------
-
-sleep 5
 
 if kill -0 "$LS_MONITOR_PID" 2>/dev/null; then
     log "[INFO] stopping amc ls monitor thread PID=$LS_MONITOR_PID"
@@ -497,15 +509,20 @@ for URL in "${URLS[@]}"; do
     # but does NOT run it. Poll the pane for the endpoint, then connect so the
     # tenant appears in `adb devices` (which is how the harness discovers it).
     ENDPOINT=""
-    for _ in $(seq 1 30); do
+    ENDPOINT_DEADLINE=$(awk -v now="$(cut -d' ' -f1 /proc/uptime)" -v timeout="${BOOT_TIMEOUT_S}" 'BEGIN { printf "%.9f", now + timeout }')
+    while true; do
         PANE_OUTPUT=$(tmux capture-pane -t "$SESSION_NAME" -p 2>/dev/null)
         ENDPOINT=$(echo "$PANE_OUTPUT" | grep -oE "127\.0\.0\.1:[0-9]+" | head -n1)
         [[ -n "$ENDPOINT" ]] && break
-        sleep 2
+        ENDPOINT_NOW=$(cut -d' ' -f1 /proc/uptime)
+        ENDPOINT_TIMED_OUT=$(awk -v now="${ENDPOINT_NOW}" -v deadline="${ENDPOINT_DEADLINE}" 'BEGIN { print (now >= deadline) ? 1 : 0 }')
+        (( ENDPOINT_TIMED_OUT )) && break
+        sleep "${READY_POLL_INTERVAL_S}"
     done
 
     if [[ -n "$ENDPOINT" ]]; then
         echo "$ENDPOINT" >> "$ADB_OUTPUT"
+        [[ -z "${ENDPOINT_LOG}" ]] || printf '%d %s\n' "$((i-1))" "${ENDPOINT}" >> "${ENDPOINT_LOG}"
         echo "[INFO] adb connect $ENDPOINT"
         adb connect "$ENDPOINT"
     else

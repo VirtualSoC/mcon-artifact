@@ -37,6 +37,7 @@ experiments:
     apps_dir: ${BASE_DIR}/scalebench/apps  # top-50 APK/XAPK corpus on disk
     max_apps: null                            # null = full corpus
     provision_interval_s: 0.5                  # pacing while bringing tenants up (not measured)
+    ready_poll_interval_s: 0.1
     boot_timeout_s: 180
     # Per-tenant logical-mapping concurrency (pm install-existing). The reference
     # evaluate.py maps SERIALLY (=1); unbounded parallelism convoys on the

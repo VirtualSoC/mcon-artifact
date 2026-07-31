@@ -20,6 +20,9 @@ LOG_DIR=$(cd "${LOG_DIR}" >/dev/null 2>&1 && pwd || echo "${LOG_DIR}")
 SUMMARY_LOG="${LOG_DIR}/avd_multi_summary.log"
 AVD_PRIME_AUTO=${AVD_PRIME_AUTO:-1}
 AVD_NO_WINDOW=${AVD_NO_WINDOW:-0}
+AVD_PREPARE_ONLY=${AVD_PREPARE_ONLY:-0}
+ISSUE_INTERVAL_S=${MCONBENCH_ISSUE_INTERVAL_S:-0}
+ISSUE_LOG=${MCONBENCH_ISSUE_LOG:-}
 
 ensure_adb() {
     if ! command -v adb >/dev/null 2>&1; then
@@ -99,6 +102,7 @@ run_avds() {
 
     echo "Logs will be written to: ${LOG_DIR}"
 
+    batch_start=$(cut -d' ' -f1 /proc/uptime)
     for (( i=1; i<=COUNT; i++ )); do
         NAME="${AVD_PREFIX}-${i}"
         ADB_PORT=$((ADB_BASE_PORT + (i-1)*2))
@@ -198,6 +202,10 @@ run_avds() {
             && sed -i 's/^GLDirectMem=.*/GLDirectMem=on/' "${CONFIG_FILE}" \
             || echo 'GLDirectMem=on' >> "${CONFIG_FILE}"
 
+        if (( AVD_PREPARE_ONLY )); then
+            continue
+        fi
+
         if avd_is_running "${NAME}"; then
             echo "Emulator ${NAME} is already running; skipping launch."
             continue
@@ -212,6 +220,7 @@ run_avds() {
             -avd "${NAME}"
             -ports "${CONSOLE_PORT},${ADB_PORT}"
             -no-snapshot
+            -wipe-data
             -netdelay none
             -netspeed full
             -gpu host
@@ -222,23 +231,86 @@ run_avds() {
             echo "  Headless mode enabled for ${NAME}" | tee -a "${SUMMARY_LOG}"
             emulator_cmd+=(-no-window)
         fi
+        index=$((i-1))
+        target=$(awk -v start="${batch_start}" -v index="${index}" -v interval="${ISSUE_INTERVAL_S}" 'BEGIN { printf "%.9f", start + index * interval }')
+        now=$(cut -d' ' -f1 /proc/uptime)
+        delay=$(awk -v target="${target}" -v now="${now}" 'BEGIN { d = target - now; if (d > 0) printf "%.9f", d; else print "0" }')
+        [[ "${delay}" == "0" ]] || sleep "${delay}"
+        issued=$(date +%s.%N)
+        issued_monotonic=$(cut -d' ' -f1 /proc/uptime)
+        [[ -z "${ISSUE_LOG}" ]] || printf '%d %s %s\n' "${index}" "${issued}" "${issued_monotonic}" >> "${ISSUE_LOG}"
         # Disable Vulkan while keeping OpenGL host acceleration enabled
         if ((${#gpu_env[@]})); then
             env "${gpu_env[@]}" "${emulator_cmd[@]}" > "${LOG_DIR}/emulator_${NAME}.log" 2>&1 &
         else
             "${emulator_cmd[@]}" > "${LOG_DIR}/emulator_${NAME}.log" 2>&1 &
         fi
-        # -no-window
-        sleep 1
-
-        local serial
-        serial=$(find_serial_for_avd "${NAME}")
-        if [[ -n "${serial}" ]]; then
-            echo "  -> registered as ${serial}"
-        fi
     done
 
     echo "Started ${COUNT} emulator instance(s) with prefix ${AVD_PREFIX}."
+}
+
+launch_avds() {
+    ensure_creation_tools
+    start_adb_server
+    batch_start=$(cut -d' ' -f1 /proc/uptime)
+
+    for (( i=1; i<=COUNT; i++ )); do
+        index=$((i-1))
+        NAME="${AVD_PREFIX}-${i}"
+        ADB_PORT=$((ADB_BASE_PORT + index*2))
+        CONSOLE_PORT=$((CONSOLE_BASE_PORT + index*2))
+        AVD_DIR="${HOME}/.android/avd/${NAME}.avd"
+        CONFIG_FILE="${AVD_DIR}/config.ini"
+        if [[ ! -s "${CONFIG_FILE}" ]]; then
+            echo "ERROR: prepared AVD ${NAME} is missing or invalid" >&2
+            return 1
+        fi
+        if avd_is_running "${NAME}"; then
+            echo "ERROR: emulator ${NAME} is already running" >&2
+            return 1
+        fi
+
+        local -a gpu_env=()
+        local offload_val
+        if (( AVD_PRIME_AUTO )); then
+            offload_val=$(( (index % 2) + 1 ))
+            gpu_env=("__NV_PRIME_RENDER_OFFLOAD=${offload_val}" "__GLX_VENDOR_LIBRARY_NAME=nvidia")
+        elif [[ -n "${__NV_PRIME_RENDER_OFFLOAD:-}" && -n "${__GLX_VENDOR_LIBRARY_NAME:-}" ]]; then
+            gpu_env=("__NV_PRIME_RENDER_OFFLOAD=${__NV_PRIME_RENDER_OFFLOAD}" "__GLX_VENDOR_LIBRARY_NAME=${__GLX_VENDOR_LIBRARY_NAME}")
+        fi
+
+        local -a emulator_cmd=(
+            "${SDK_ROOT}/emulator/emulator"
+            -avd "${NAME}"
+            -ports "${CONSOLE_PORT},${ADB_PORT}"
+            -no-snapshot
+            -wipe-data
+            -netdelay none
+            -netspeed full
+            -gpu host
+            -feature -Vulkan
+            -verbose
+        )
+        if (( AVD_NO_WINDOW )); then
+            emulator_cmd+=(-no-window)
+        fi
+
+        target=$(awk -v start="${batch_start}" -v index="${index}" -v interval="${ISSUE_INTERVAL_S}" 'BEGIN { printf "%.9f", start + index * interval }')
+        now=$(cut -d' ' -f1 /proc/uptime)
+        delay=$(awk -v target="${target}" -v now="${now}" 'BEGIN { d = target - now; if (d > 0) printf "%.9f", d; else print "0" }')
+        [[ "${delay}" == "0" ]] || sleep "${delay}"
+        issued=$(date +%s.%N)
+        issued_monotonic=$(cut -d' ' -f1 /proc/uptime)
+        [[ -z "${ISSUE_LOG}" ]] || printf '%d %s %s\n' "${index}" "${issued}" "${issued_monotonic}" >> "${ISSUE_LOG}"
+
+        echo "Launching emulator ${NAME}..."
+        if ((${#gpu_env[@]})); then
+            env "${gpu_env[@]}" "${emulator_cmd[@]}" > "${LOG_DIR}/emulator_${NAME}.log" 2>&1 &
+        else
+            "${emulator_cmd[@]}" > "${LOG_DIR}/emulator_${NAME}.log" 2>&1 &
+        fi
+    done
 }
 
 
@@ -268,6 +340,8 @@ remove_avds() {
 
 case "${ACTION}" in
     run) run_avds ;;
+    prepare) AVD_PREPARE_ONLY=1 run_avds ;;
+    launch) launch_avds ;;
     stop) stop_avds ;;
     rm|remove|delete) remove_avds ;;
     *)

@@ -540,13 +540,23 @@ def wait_for_boot(
 def _hotplug_summary(tasks: List[HotplugTask], count: int, interval: float) -> Dict[str, Any]:
     """Reduce per-tenant HotplugTask state into a JSON-serializable summary."""
     start_times = [t.start_time for t in tasks if t.start_time > 0]
+    start_monotonic = [t.start_monotonic for t in tasks if t.start_monotonic > 0]
     ready_times = [t.end_time for t in tasks if t.ready and t.end_time is not None]
+    ready_monotonic = [t.end_monotonic for t in tasks if t.ready and t.end_monotonic is not None]
     first_start = min(start_times) if start_times else None
     last_ready = max(ready_times) if ready_times else None
-    total = (last_ready - first_start) if (first_start is not None and last_ready is not None) else None
+    total = (
+        max(ready_monotonic) - min(start_monotonic)
+        if ready_monotonic and start_monotonic
+        else None
+    )
     tenants = []
     for t in tasks:
-        duration = (t.end_time - t.start_time) if (t.end_time and t.start_time > 0) else None
+        duration = (
+            t.end_monotonic - t.start_monotonic
+            if t.end_monotonic is not None and t.start_monotonic > 0
+            else None
+        )
         tenants.append(
             {
                 "index": t.index,
@@ -556,8 +566,14 @@ def _hotplug_summary(tasks: List[HotplugTask], count: int, interval: float) -> D
                 "dpi": t.profile.dpi if t.profile else None,
                 "start": t.start_time or None,
                 "end": t.end_time,
+                "issued_at_s": t.start_time or None,
+                "ready_at_s": t.end_time,
+                "issued_monotonic_s": t.start_monotonic or None,
+                "ready_monotonic_s": t.end_monotonic,
                 "duration_s": duration,
                 "ready": t.ready,
+                "boot_completed": True,
+                "launcher_started": t.ready,
                 "status": "ready" if t.ready else ("failed" if t.start_time <= 0 else "timeout"),
             }
         )
@@ -577,7 +593,10 @@ def hotplug_containers(
     count: int,
     profiles: Optional[List[DisplayProfile]] = None,
     interval: float = 1.0,
+    ready_poll_interval: float = 0.1,
+    ready_timeout: Optional[float] = None,
 ) -> Dict[str, Any]:
+    tenant_timeout = float(ready_timeout if ready_timeout is not None else cfg.launcher_timeout)
     adb_ready = ensure_adb_target(cfg)
     tasks = [HotplugTask(index=i + 1) for i in range(count)]
     if profiles:
@@ -585,23 +604,33 @@ def hotplug_containers(
             task.profile = profiles[i % len(profiles)]
 
     def launcher_monitor() -> None:
-        _monitor_launchers(cfg, tasks, adb_ready)
+        _monitor_launchers(cfg, tasks, adb_ready, ready_poll_interval, tenant_timeout)
 
     monitor_thread = threading.Thread(target=launcher_monitor, name="launcher-monitor", daemon=True)
     if adb_ready:
         monitor_thread.start()
 
-    for task in tasks:
+    first_target = time.monotonic()
+    for offset, task in enumerate(tasks):
+        target = first_target + offset * max(0.0, interval)
+        delay = target - time.monotonic()
+        if delay > 0:
+            time.sleep(delay)
         _launch_hotplug(cfg, task.index, task)  # issue provision request (serial, fast)
-        time.sleep(interval)  # pace successive requests (issuance-rate knob)
 
     if adb_ready:
-        monitor_thread.join(timeout=cfg.launcher_timeout + 5)
+        monitor_thread.join(
+            timeout=(count - 1) * max(0.0, interval)
+            + count * cfg.monitor_timeout
+            + tenant_timeout
+            + 5
+        )
 
     for task in tasks:
         if not task.reported:
             if task.end_time is None:
                 task.end_time = time.time()
+                task.end_monotonic = time.monotonic()
             _log_task_completion(cfg, task)
 
     # Stamp guest-side DPI after readiness is measured (QEMU already set the
@@ -612,6 +641,8 @@ def hotplug_containers(
             _apply_display_profile(cfg, task)
 
     summary = _hotplug_summary(tasks, count, interval)
+    summary["ready_poll_interval_s"] = ready_poll_interval
+    summary["ready_timeout_s"] = tenant_timeout
     if summary["total_s"] is not None:
         log(
             "INFO",
@@ -640,11 +671,14 @@ class HotplugTask:
         self.index = index
         self.profile: Optional[DisplayProfile] = None
         self.start_time: float = 0.0
+        self.start_monotonic: float = 0.0
         self.instance_id: Optional[int] = None
         self.user_id: Optional[int] = None
         self.waiting = False
         self.ready = False
         self.end_time: Optional[float] = None
+        self.end_monotonic: Optional[float] = None
+        self.launch_finished = False
         self.reported = False
 
 
@@ -658,14 +692,17 @@ def _launch_hotplug(cfg: Config, idx: int, task: HotplugTask) -> None:
             command = "vsoc container new"
             if task.profile is not None:
                 command += f" {task.profile.monitor_arg}"
+            task.start_time = time.time()
+            task.start_monotonic = time.monotonic()
             sock.sendall((command + "\n").encode())
             response = _read_until_prompt(sock, cfg.monitor_timeout)
     except OSError as exc:
         log("WARN", f"hotplug {idx}/{task.index} failed to start: {exc}")
         task.end_time = time.time()
+        task.end_monotonic = time.monotonic()
+        task.launch_finished = True
         return
 
-    task.start_time = time.time()
     container_id = _extract_container_id(response)
     task.instance_id = int(container_id) if container_id.isdigit() else None
     if task.instance_id is not None:
@@ -673,6 +710,7 @@ def _launch_hotplug(cfg: Config, idx: int, task: HotplugTask) -> None:
             task.user_id = get_user_id_by_instance(task.instance_id)
         except ValueError:
             task.user_id = None
+    task.launch_finished = True
 
 
 def _log_task_completion(cfg: Config, task: HotplugTask) -> None:
@@ -690,7 +728,8 @@ def _log_task_completion(cfg: Config, task: HotplugTask) -> None:
         task.reported = True
         return
     end_time = task.end_time or time.time()
-    duration = end_time - task.start_time
+    end_monotonic = task.end_monotonic or time.monotonic()
+    duration = end_monotonic - task.start_monotonic
     status = "ready" if task.ready else "timeout"
     start_fmt = format_timestamp(task.start_time)
     end_fmt = format_timestamp(end_time)
@@ -734,17 +773,42 @@ def _apply_display_profile(cfg: Config, task: HotplugTask) -> None:
         log("WARN", f"wm density failed on display {display_id}: {res.get('stderr', '').strip()}")
 
 
-def _monitor_launchers(cfg: Config, tasks: List[HotplugTask], adb_ready: bool) -> None:
+def _monitor_launchers(
+    cfg: Config,
+    tasks: List[HotplugTask],
+    adb_ready: bool,
+    poll_interval: float,
+    ready_timeout: float,
+) -> None:
     if not adb_ready:
         return
 
-    deadline = time.time() + cfg.launcher_timeout
     pending: Dict[int, HotplugTask] = {}
     consecutive_adb_failures = 0
 
-    while time.time() < deadline:
+    while True:
+        now = time.time()
+        now_monotonic = time.monotonic()
         for task in tasks:
-            if task.user_id is None or task.ready:
+            if task.reported or task.ready:
+                continue
+            if task.launch_finished and task.user_id is None:
+                if task.end_time is None:
+                    task.end_time = now
+                    task.end_monotonic = now_monotonic
+                _log_task_completion(cfg, task)
+                continue
+            if (
+                task.start_monotonic > 0
+                and now_monotonic - task.start_monotonic >= ready_timeout
+            ):
+                task.end_time = now
+                task.end_monotonic = now_monotonic
+                if task.user_id is not None:
+                    pending.pop(task.user_id, None)
+                _log_task_completion(cfg, task)
+                continue
+            if task.user_id is None:
                 continue
             if task.user_id not in pending:
                 pending[task.user_id] = task
@@ -755,11 +819,11 @@ def _monitor_launchers(cfg: Config, tasks: List[HotplugTask], adb_ready: bool) -
                     )
                     task.waiting = True
 
+        if all(task.reported for task in tasks):
+            return
+
         if not pending:
-            launching_pending = any(task.instance_id is None and not task.reported for task in tasks)
-            if not launching_pending:
-                break
-            time.sleep(0.01)
+            time.sleep(max(0.001, poll_interval))
             continue
 
         res = adb_shell(cfg.adb_target, ["ps", "-A"], print_output=False, timeout=5)
@@ -780,6 +844,7 @@ def _monitor_launchers(cfg: Config, tasks: List[HotplugTask], adb_ready: bool) -
                 if task and not task.ready:
                     task.ready = True
                     task.end_time = time.time()
+                    task.end_monotonic = time.monotonic()
                     pending.pop(uid, None)
                     _log_task_completion(cfg, task)
         else:
@@ -806,14 +871,16 @@ def _monitor_launchers(cfg: Config, tasks: List[HotplugTask], adb_ready: bool) -
         if all(t.reported for t in tasks):
             return
 
-        time.sleep(0.01)
+        time.sleep(max(0.001, poll_interval))
 
     now = time.time()
+    now_monotonic = time.monotonic()
     for task in tasks:
         if task.reported or task.user_id is None or task.ready:
             continue
         if task.end_time is None:
             task.end_time = now
+            task.end_monotonic = now_monotonic
         _log_task_completion(cfg, task)
 
 
@@ -860,6 +927,18 @@ def parse_args() -> argparse.Namespace:
         help="[hotplug] seconds between successive provision requests (issuance rate)",
     )
     parser.add_argument(
+        "--ready-poll-interval",
+        type=float,
+        default=0.1,
+        help="[hotplug] seconds between launcher readiness checks",
+    )
+    parser.add_argument(
+        "--ready-timeout",
+        type=float,
+        default=None,
+        help="[hotplug] per-tenant seconds from issue to launcher readiness",
+    )
+    parser.add_argument(
         "--json",
         metavar="PATH",
         help="[hotplug] write a structured JSON summary of provision timings",
@@ -885,7 +964,12 @@ def main() -> None:
     elif args.action == "hotplug":
         profiles = load_profiles(args.profile, args.profiles_file)
         summary = hotplug_containers(
-            cfg, resolved_count(), profiles=profiles or None, interval=args.interval
+            cfg,
+            resolved_count(),
+            profiles=profiles or None,
+            interval=args.interval,
+            ready_poll_interval=args.ready_poll_interval,
+            ready_timeout=args.ready_timeout,
         )
         if args.json:
             out = Path(args.json)

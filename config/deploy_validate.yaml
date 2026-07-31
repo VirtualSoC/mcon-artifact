@@ -30,6 +30,7 @@ experiments:
     apps_dir: ${BASE_DIR}/scalebench/apps
     max_apps: null
     provision_interval_s: 0.5
+    ready_poll_interval_s: 0.1
     boot_timeout_s: 180
     map_concurrency: 1        # the fix under test (serial mapping)
 
