@@ -10,9 +10,9 @@ Each experiment writes a CSV and plots one paper figure:
 
 | Claim (paper §) | Experiment (`run`) | Figure (`plot`) | Expected qualitative trend |
 |---|---|---|---|
-| Sub-second, scalable provisioning (§6.2) | `provision_concurrent` | `container_boot_time.pdf` | Sweeps issuance rates at each N; MCon ~1 s @ N=1, near-linear; baselines >15 s floor |
-| Near-`O(1)` deployment (§6.3) | `deploy` | `container_install_time.pdf` | MCon grows ~1.7x from 1→64; baselines `O(N)` |
-| High throughput & density (§6.4) | `fps` | `fps.pdf` | MCon sustains FPS to higher N than baselines |
+| Sub-second, scalable provisioning (§7.2) | `provision_concurrent` | `container_boot_time.pdf` | Sweeps issuance rates at each N; MCon ~1 s @ N=1, near-linear; baselines >15 s floor |
+| Near-`O(1)` deployment (§7.3) | `deploy` | `container_install_time.pdf` | MCon grows ~1.7x from 1→64; baselines `O(N)` |
+| High throughput & density (§7.4) | `fps` | `fps.pdf` | MCon sustains FPS to higher N than baselines |
 
 ## Hardware note
 
