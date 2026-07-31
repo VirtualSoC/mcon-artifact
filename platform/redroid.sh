@@ -3,14 +3,14 @@
 # Docker + redroid + init.sh) and forwards SSH (22) and the adb bridge ports
 # (5555-5655) back to the host. See docs/setup.md > Redroid.
 
-cd "${BASE_DIR:?set BASE_DIR (see scalebench/env.example)}"
+cd "${BASE_DIR:?set BASE_DIR (see mcon-artifact/env.example)}"
 
 ulimit -n 100000
 
 # Prebuilt outer-VM image; override with REDROID_IMG_PATH.
 REDROID_IMG_PATH="${REDROID_IMG_PATH:-${BASE_DIR}/img/redroid/redroid.qcow2}"
-REDROID_VM_CPUS="${REDROID_VM_CPUS:-${VM_CPUS:?set VM_CPUS or REDROID_VM_CPUS; source scalebench/.env (see env.example)}}"
-REDROID_VM_MEM="${REDROID_VM_MEM:-${VM_MEM:?set VM_MEM or REDROID_VM_MEM; source scalebench/.env (see env.example)}}"
+REDROID_VM_CPUS="${REDROID_VM_CPUS:-${VM_CPUS:?set VM_CPUS or REDROID_VM_CPUS; source mcon-artifact/.env (see env.example)}}"
+REDROID_VM_MEM="${REDROID_VM_MEM:-${VM_MEM:?set VM_MEM or REDROID_VM_MEM; source mcon-artifact/.env (see env.example)}}"
 REDROID_SEED_IMG="${REDROID_SEED_IMG:-${BASE_DIR}/img/redroid/redroid-seed.img}"
 REDROID_VM_PASSWORD="${REDROID_VM_PASSWORD:-redroid}"
 REDROID_DISPLAY="${REDROID_DISPLAY:-sdl,gl=on}"

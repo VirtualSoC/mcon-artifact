@@ -7,7 +7,7 @@
 paths:
   base_dir: ${BASE_DIR}
   vsoc_img_path: ${GUEST_IMG_PATH}
-  scalebench_dir: ${BASE_DIR}/scalebench
+  artifact_dir: ${BASE_DIR}/mcon-artifact
 
 adb:
   start_port: 5555
@@ -24,7 +24,7 @@ sweep:
 
 experiments:
   deploy:
-    apps_dir: ${BASE_DIR}/scalebench/apps
+    apps_dir: ${BASE_DIR}/mcon-artifact/apps
     max_apps: 12
     map_concurrency: 1
   fps:
@@ -36,7 +36,7 @@ experiments:
     seed: 0
     min_frames: 30
     max_apps: 12
-    apps_dir: ${BASE_DIR}/scalebench/apps
+    apps_dir: ${BASE_DIR}/mcon-artifact/apps
     provision_interval_s: 0.5
     ready_poll_interval_s: 0.1
     boot_timeout_s: 180

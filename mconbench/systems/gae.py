@@ -1,4 +1,4 @@
-"""GAE (Google Android Emulator) driver: wraps scalebench/platform/avd.sh.
+"""GAE (Google Android Emulator) driver: wraps mcon-artifact/platform/avd.sh.
 
 Standard AVDs are launched with ``-ports CONSOLE,ADB``, which exposes the adb
 port over TCP, so -- exactly like vSoC -- each instance is addressed as
@@ -35,7 +35,7 @@ class GAEDriver(BaselineDriver):
 
     def __init__(self, cfg: Config) -> None:
         super().__init__(cfg)
-        self.script = self.scalebench_dir / "platform" / "avd.sh"
+        self.script = self.artifact_dir / "platform" / "avd.sh"
         if not self.script.exists():
             raise SystemExit(f"avd.sh not found at {self.script}")
         self.base_console_port = int(cfg.get("systems.gae.base_console_port", 55554))

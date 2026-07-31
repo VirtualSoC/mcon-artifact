@@ -5,8 +5,9 @@ are reading it from that checkout; repo-relative links such as
 [`env.example`](../env.example) and [`config/default.yaml`](../config/default.yaml)
 refer to files in the clone.
 
-Paths below are relative to the artifact's `BASE_DIR` (see
-[`env.example`](../env.example)).
+Paths below are relative to the workspace `BASE_DIR` (see
+[`env.example`](../env.example)). The artifact should be checked out at
+`$BASE_DIR/mcon-artifact` before you continue.
 
 ## MCon and vSoC
 
@@ -15,7 +16,8 @@ a single build. Follow the Linux section of the vSoC build guide:
 
 > **https://github.com/VirtualSoC/vsoc/wiki/Build-vSoC**
 
-When the build finishes you should have `bin/qemu-system-x86_64` and a guest image under `img/`. Then:
+When the build finishes you should have `bin/qemu-system-x86_64` and the guest
+image under `img/vsoc/`. Then:
 
 1. Point our code at the tree: set `BASE_DIR` (and `GUEST_IMG_PATH`) in your
    `.env` — see [`env.example`](../env.example).
@@ -266,11 +268,11 @@ sudo amc node show lxd0 | grep -E 'gpu-slots|type: nvidia'
 For our benchmark code to run the appliance without sudo privileges, grant the user a scoped NOPASSWD rule; If you are running as root or are willing to enter a password yourself during the benchmark, you can skip the sudoers rule.
 
 ```bash
-# /etc/sudoers.d/anbox-scalebench
+# /etc/sudoers.d/anbox-mcon-artifact
 echo "$USER ALL=(root) NOPASSWD: /snap/bin/amc, /snap/bin/anbox-cloud-appliance.gateway" \
-  | sudo tee /etc/sudoers.d/anbox-scalebench >/dev/null
-sudo chmod 440 /etc/sudoers.d/anbox-scalebench
-sudo visudo -cf /etc/sudoers.d/anbox-scalebench    # validate syntax
+  | sudo tee /etc/sudoers.d/anbox-mcon-artifact >/dev/null
+sudo chmod 440 /etc/sudoers.d/anbox-mcon-artifact
+sudo visudo -cf /etc/sudoers.d/anbox-mcon-artifact    # validate syntax
 sudo -n amc ls                                     # sanity: no password prompt
 ```
 

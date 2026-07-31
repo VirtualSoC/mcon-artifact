@@ -245,7 +245,7 @@ class AnboxDriver(BaselineDriver):
             return False
 
         session_name = f"anbox_{index + 1}"
-        log_path = self.scalebench_dir / "platform" / "anbox_connect_logs" / f"session_{index + 1}.log"
+        log_path = self.artifact_dir / "platform" / "anbox_connect_logs" / f"session_{index + 1}.log"
         subprocess.run(["tmux", "kill-session", "-t", session_name], capture_output=True)
         command = f"anbox-connect {shlex.quote(url_match.group(0))} -k 2>&1 | tee -a {shlex.quote(str(log_path))}"
         started = subprocess.run(

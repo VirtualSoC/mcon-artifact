@@ -7,7 +7,7 @@
 paths:
   base_dir: ${BASE_DIR}
   vsoc_img_path: ${GUEST_IMG_PATH}
-  scalebench_dir: ${BASE_DIR}/scalebench
+  artifact_dir: ${BASE_DIR}/mcon-artifact
 
 adb:
   start_port: 5555
@@ -31,7 +31,7 @@ experiments:
     prime_warm: auto
     reset_before_prime: true
   deploy:
-    apps_dir: ${BASE_DIR}/scalebench/apps
+    apps_dir: ${BASE_DIR}/mcon-artifact/apps
     max_apps: 2            # only install 2 apps for the smoke
     provision_interval_s: 0.5
     ready_poll_interval_s: 0.1
@@ -45,7 +45,7 @@ experiments:
     seed: 0
     min_frames: 10
     max_apps: 2
-    apps_dir: ${BASE_DIR}/scalebench/apps
+    apps_dir: ${BASE_DIR}/mcon-artifact/apps
     provision_interval_s: 0.5
     ready_poll_interval_s: 0.1
     boot_timeout_s: 180

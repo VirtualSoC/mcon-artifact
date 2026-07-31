@@ -84,7 +84,7 @@ class RedroidDriver(BaselineDriver):
         self._vm_proc = subprocess.Popen(
             self.vm_launch_cmd,
             shell=True,
-            cwd=str(self.scalebench_dir),
+            cwd=str(self.artifact_dir),
             env=self.env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

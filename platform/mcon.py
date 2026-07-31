@@ -165,11 +165,11 @@ class Config:
         # --- VM sizing (RAM + vCPUs) ---------------------------------------
         guest_mem = os.environ.get("MCON_VM_MEM") or os.environ.get("VM_MEM")
         if not guest_mem:
-            log("ERROR", "VM_MEM (or MCON_VM_MEM) must be set; source scalebench/.env (see env.example)")
+            log("ERROR", "VM_MEM (or MCON_VM_MEM) must be set; source mcon-artifact/.env (see env.example)")
             sys.exit(1)
         cpus_env = os.environ.get("MCON_VM_CPUS") or os.environ.get("VM_CPUS")
         if not cpus_env:
-            log("ERROR", "VM_CPUS (or MCON_VM_CPUS) must be set; source scalebench/.env (see env.example)")
+            log("ERROR", "VM_CPUS (or MCON_VM_CPUS) must be set; source mcon-artifact/.env (see env.example)")
             sys.exit(1)
         smp = max(1, to_int(cpus_env, 1))
         display_width = to_int(os.environ.get("DISPLAY_WIDTH"), 1080)

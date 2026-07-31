@@ -1,4 +1,4 @@
-"""MCon system driver: wraps the hardened scalebench/platform/mcon.py.
+"""MCon system driver: wraps the hardened mcon-artifact/platform/mcon.py.
 
 Every measurement primitive lives in mcon.py (boot, warm, hotplug with the
 structured --json summary, stop, reset). This driver only orchestrates
@@ -30,9 +30,9 @@ class MConDriver(Driver):
         if not base_dir or "${" in str(base_dir):
             raise SystemExit("BASE_DIR is not set (export it or set paths.base_dir in the config)")
         self.base_dir = Path(base_dir)
-        scalebench = cfg.get("paths.scalebench_dir") or str(self.base_dir / "scalebench")
-        self.scalebench_dir = Path(scalebench)
-        self.mcon = self.scalebench_dir / "platform" / "mcon.py"
+        artifact = cfg.get("paths.artifact_dir") or str(self.base_dir / "mcon-artifact")
+        self.artifact_dir = Path(artifact)
+        self.mcon = self.artifact_dir / "platform" / "mcon.py"
         if not self.mcon.exists():
             raise SystemExit(f"mcon.py not found at {self.mcon}")
         self.python = sys.executable or "python3"
@@ -181,10 +181,10 @@ class MConDriver(Driver):
 
     # -- deployment ---------------------------------------------------------
     def _adb(self):
-        """Lazy-import scalebench's adb/container helpers (they live outside this pkg)."""
-        sb = str(self.scalebench_dir)
-        if sb not in sys.path:
-            sys.path.insert(0, sb)
+        """Lazy-import mcon-artifact's adb/container helpers (outside this pkg)."""
+        artifact = str(self.artifact_dir)
+        if artifact not in sys.path:
+            sys.path.insert(0, artifact)
         import adb_utils  # type: ignore
         return adb_utils
 
@@ -256,10 +256,10 @@ class MConDriver(Driver):
 
     # -- fps ----------------------------------------------------------------
     def _container(self):
-        """Lazy-import scalebench's container_utils + fps_profiler helpers."""
-        sb = str(self.scalebench_dir)
-        if sb not in sys.path:
-            sys.path.insert(0, sb)
+        """Lazy-import mcon-artifact's container_utils + fps_profiler helpers."""
+        artifact = str(self.artifact_dir)
+        if artifact not in sys.path:
+            sys.path.insert(0, artifact)
         import container_utils  # type: ignore
         import fps_profiler  # type: ignore
         return container_utils, fps_profiler

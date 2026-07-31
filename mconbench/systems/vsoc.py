@@ -1,4 +1,4 @@
-"""vSoC driver: wraps scalebench/platform/vsoc.sh (one QEMU instance per tenant).
+"""vSoC driver: wraps mcon-artifact/platform/vsoc.sh (one QEMU instance per tenant).
 
 vsoc.sh exposes ``run|stop|rm COUNT BASE_MONITOR_PORT BASE_ADB_PORT`` and maps
 instance ``i`` to adb port ``BASE_ADB_PORT + i`` (stride 1). It reads BASE_DIR and
@@ -19,7 +19,7 @@ class VSoCDriver(BaselineDriver):
 
     def __init__(self, cfg: Config) -> None:
         super().__init__(cfg)
-        self.script = self.scalebench_dir / "platform" / "vsoc.sh"
+        self.script = self.artifact_dir / "platform" / "vsoc.sh"
         if not self.script.exists():
             raise SystemExit(f"vsoc.sh not found at {self.script}")
         vsoc = os.environ.get("GUEST_IMG_PATH") or cfg.get("paths.vsoc_img_path")

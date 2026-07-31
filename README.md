@@ -25,11 +25,14 @@ Absolute numbers (max density, peak FPS, crash points) will vary depending on th
 
 **Prerequisites (host):** An Ubuntu 20.04 or greater Linux machine with >= 16 GiB memory and a NVIDIA GPU is required. Free disk space of at least 2 TiB is required if you want to reproduce the performance of all the baselines.
 
-**Clone and install this repo:**
+**Choose a workspace root, then clone and install this repo under the root directory:**
 
 ```bash
-git clone https://github.com/VirtualSoC/mcon-artifact.git
-cd mcon-artifact
+# note that `BASE_DIR` is the workspace root, not the artifact checkout itself.
+export BASE_DIR=/path/to/workspace
+mkdir -p "$BASE_DIR"
+git clone https://github.com/VirtualSoC/mcon-artifact.git "$BASE_DIR/mcon-artifact"
+cd "$BASE_DIR/mcon-artifact"
 chmod +x cmd
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
@@ -48,7 +51,7 @@ source .env       # our code reads these from the environment
 
 ## Step 2 — Download the app corpus
 
-The `deploy` and `fps` experiments needs the paper's top-50 app corpus
+The `deploy` and `fps` experiments need the paper's top-50 app corpus
 (~6.2 GB of APK/XAPK files) installed into `$BASE_DIR/mcon-artifact/apps/` (the
 `experiments.*.apps_dir` in every config). Download and unpack it with:
 

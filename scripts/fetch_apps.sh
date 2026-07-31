@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Download the top-50 app corpus into $BASE_DIR/scalebench/apps.
+# Download the top-50 app corpus into $BASE_DIR/mcon-artifact/apps.
 #
 # The corpus (~6.2 GB of APK/XAPK files) is hosted as a SPLIT tar archive on a
 # GitHub release (GitHub caps release assets at 2 GB/file, so it ships as several
@@ -8,7 +8,7 @@
 #
 # Produce the assets this script consumes with the companion scripts/pack_apps.sh.
 #
-# Usage (from the scalebench repo root, after `source .env`):
+# Usage (from the mcon-artifact repo root, after `source .env`):
 #   bash scripts/fetch_apps.sh
 # Override with MCON_APPS_URL=<url> to fetch the corpus from a different release.
 
@@ -19,13 +19,22 @@ RELEASE_URL="${MCON_APPS_URL:-https://github.com/VirtualSoC/mcon-docs/releases/d
 
 : "${BASE_DIR:?BASE_DIR is not set -- 'source .env' first (see README Step 1)}"
 
+REPO_ROOT="$(realpath -m "$(dirname "${BASH_SOURCE[0]}")/..")"
+EXPECTED_ROOT="$(realpath -m "$BASE_DIR/mcon-artifact")"
+if [[ "$REPO_ROOT" != "$EXPECTED_ROOT" ]]; then
+  echo "error: artifact checkout must be at \$BASE_DIR/mcon-artifact" >&2
+  echo "       current checkout: $REPO_ROOT" >&2
+  echo "       expected checkout: $EXPECTED_ROOT" >&2
+  exit 1
+fi
+
 if [[ "$RELEASE_URL" == *"<"* ]]; then
   echo "error: set MCON_APPS_URL (or edit RELEASE_URL in this script) to your release URL" >&2
   exit 1
 fi
 command -v curl >/dev/null || { echo "error: curl is required" >&2; exit 1; }
 
-DEST_PARENT="$BASE_DIR/scalebench"          # the tar contains a top-level apps/ dir
+DEST_PARENT="$REPO_ROOT"                    # the tar contains a top-level apps/ dir
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 

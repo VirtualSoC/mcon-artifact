@@ -4,7 +4,7 @@ Each tenant is a full instance addressed by its own adb serial. Concrete
 subclasses implement only the lifecycle hooks (``_launch``/``_stop``/``_remove``
 and, if the adb port stride differs, ``port_stride``); everything *measured* --
 concurrent cold-boot provision timing, ``O(N)`` deployment, and per-serial FPS --
-lives here and reuses scalebench's proven ``adb_utils`` / ``container_utils`` /
+lives here and reuses mcon-artifact's proven ``adb_utils`` / ``container_utils`` /
 ``fps_profiler`` helpers (the same ones evaluate.py drives), addressing each
 instance as Android user 0.
 """
@@ -42,8 +42,8 @@ class BaselineDriver(Driver):
         if not base_dir or "${" in str(base_dir):
             raise SystemExit("BASE_DIR is not set (export it or set paths.base_dir in the config)")
         self.base_dir = Path(base_dir)
-        scalebench = cfg.get("paths.scalebench_dir") or str(self.base_dir / "scalebench")
-        self.scalebench_dir = Path(scalebench)
+        artifact = cfg.get("paths.artifact_dir") or str(self.base_dir / "mcon-artifact")
+        self.artifact_dir = Path(artifact)
         self.python = sys.executable or "python3"
 
         # Connection / readiness knobs (per-system overrides under systems.<name>).
@@ -514,18 +514,18 @@ class BaselineDriver(Driver):
             adb.stop_package(serial, pkg)
         return out
 
-    # -- scalebench helper imports -----------------------------------------
+    # -- artifact helper imports -------------------------------------------
     def _adb(self):
-        sb = str(self.scalebench_dir)
-        if sb not in sys.path:
-            sys.path.insert(0, sb)
+        artifact = str(self.artifact_dir)
+        if artifact not in sys.path:
+            sys.path.insert(0, artifact)
         import adb_utils  # type: ignore
         return adb_utils
 
     def _container(self):
-        sb = str(self.scalebench_dir)
-        if sb not in sys.path:
-            sys.path.insert(0, sb)
+        artifact = str(self.artifact_dir)
+        if artifact not in sys.path:
+            sys.path.insert(0, artifact)
         import container_utils  # type: ignore
         import fps_profiler  # type: ignore
         return container_utils, fps_profiler

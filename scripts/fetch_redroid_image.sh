@@ -6,7 +6,7 @@
 # scripts/build_redroid_image.sh. It ships as a single qcow2 asset with a
 # .sha256 sidecar on the same GitHub release.
 #
-# Usage (from the scalebench repo root, after `source .env`):
+# Usage (from the mcon-artifact repo root, after `source .env`):
 #   bash scripts/fetch_redroid_image.sh
 # Override the source URL with:
 #   MCON_REDROID_URL=<direct-url-to-redroid.qcow2> bash scripts/fetch_redroid_image.sh

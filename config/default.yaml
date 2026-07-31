@@ -9,9 +9,9 @@
 # below to match your GPU headroom.
 
 paths:
-  base_dir: ${BASE_DIR}                 # vsoc tree root (has bin/qemu, img/, scalebench/)
+  base_dir: ${BASE_DIR}                 # vsoc tree root (has bin/qemu, img/, mcon-artifact/)
   vsoc_img_path: ${GUEST_IMG_PATH}      # default: ${BASE_DIR}/img/vsoc
-  scalebench_dir: ${BASE_DIR}/scalebench
+  artifact_dir: ${BASE_DIR}/mcon-artifact
 
 adb:
   start_port: 5555                      # first adb bridge port; instance i -> start_port+i
@@ -40,7 +40,7 @@ experiments:
   provision_under_load:
     bg_densities: [0, 8, 16, 32, 64]    # active tenants while timing 1 new alloc
   deploy:
-    apps_dir: ${BASE_DIR}/scalebench/apps  # top-50 APKs/XAPKs on disk (not ram-staged)
+    apps_dir: ${BASE_DIR}/mcon-artifact/apps  # top-50 APKs/XAPKs on disk (not ram-staged)
     max_apps: null                      # null = all apps; set small (e.g. 5) for quick checks
     provision_interval_s: 0.5           # pacing while bringing tenants up (NOT the measured metric)
     ready_poll_interval_s: 0.1
@@ -58,7 +58,7 @@ experiments:
     seed: 0                             # rng seed for the random pattern (reproducible)
     min_frames: 30                      # instances rendering fewer frames are excluded (noise)
     max_apps: null                      # null = full corpus; set small for quick checks
-    apps_dir: ${BASE_DIR}/scalebench/apps  # defaults to the deploy corpus if unset
+    apps_dir: ${BASE_DIR}/mcon-artifact/apps  # defaults to the deploy corpus if unset
     provision_interval_s: 0.5           # pacing while bringing tenants up (not measured)
     ready_poll_interval_s: 0.1
     boot_timeout_s: 180

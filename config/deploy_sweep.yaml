@@ -17,7 +17,7 @@
 paths:
   base_dir: ${BASE_DIR}
   vsoc_img_path: ${GUEST_IMG_PATH}
-  scalebench_dir: ${BASE_DIR}/scalebench
+  artifact_dir: ${BASE_DIR}/mcon-artifact
 
 adb:
   start_port: 5555
@@ -34,7 +34,7 @@ sweep:
 
 experiments:
   deploy:
-    apps_dir: ${BASE_DIR}/scalebench/apps  # top-50 APK/XAPK corpus on disk
+    apps_dir: ${BASE_DIR}/mcon-artifact/apps  # top-50 APK/XAPK corpus on disk
     max_apps: null                            # null = full corpus
     provision_interval_s: 0.5                  # pacing while bringing tenants up (not measured)
     ready_poll_interval_s: 0.1

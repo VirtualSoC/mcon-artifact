@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Pack $BASE_DIR/scalebench/apps into split parts + a SHA256SUMS manifest for a
+# Pack $BASE_DIR/mcon-artifact/apps into split parts + a SHA256SUMS manifest for a
 # GitHub release. Companion producer for scripts/fetch_apps.sh -- upload every
 # resulting apps.tar.part.* AND SHA256SUMS as assets on the same release.
 #
-# Usage (from the scalebench repo root, after `source .env`):
+# Usage (from the mcon-artifact repo root, after `source .env`):
 #   bash scripts/pack_apps.sh [OUT_DIR]        # default OUT_DIR: dist/apps
 #   PART_SIZE=1800M bash scripts/pack_apps.sh  # tune part size (< 2 GiB)
 
@@ -11,7 +11,7 @@ set -euo pipefail
 
 : "${BASE_DIR:?BASE_DIR is not set -- 'source .env' first (see README Step 1)}"
 
-SRC_PARENT="$BASE_DIR/scalebench"           # holds the apps/ dir to pack
+SRC_PARENT="$BASE_DIR/mcon-artifact"        # holds the apps/ dir to pack
 OUT="${1:-dist/apps}"
 PART_SIZE="${PART_SIZE:-1800M}"             # stay under GitHub's 2 GiB/file limit
 

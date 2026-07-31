@@ -21,7 +21,7 @@
 paths:
   base_dir: ${BASE_DIR}
   vsoc_img_path: ${GUEST_IMG_PATH}
-  scalebench_dir: ${BASE_DIR}/scalebench
+  artifact_dir: ${BASE_DIR}/mcon-artifact
 
 adb:
   start_port: 5555
@@ -38,7 +38,7 @@ sweep:
 
 experiments:
   deploy:
-    apps_dir: ${BASE_DIR}/scalebench/apps  # corpus (shared with fps below)
+    apps_dir: ${BASE_DIR}/mcon-artifact/apps  # corpus (shared with fps below)
     max_apps: null
     map_concurrency: 1            # serial mapping (see deploy_sweep.yaml)
   fps:
@@ -50,7 +50,7 @@ experiments:
     seed: 0                       # reproducible random assignment
     min_frames: 30                # instances rendering fewer frames are excluded (noise)
     max_apps: null                # null = full corpus
-    apps_dir: ${BASE_DIR}/scalebench/apps
+    apps_dir: ${BASE_DIR}/mcon-artifact/apps
     provision_interval_s: 0.5     # pacing while bringing tenants up (not measured)
     ready_poll_interval_s: 0.1
     boot_timeout_s: 180

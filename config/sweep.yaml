@@ -12,7 +12,7 @@
 paths:
   base_dir: ${BASE_DIR}
   vsoc_img_path: ${GUEST_IMG_PATH}
-  scalebench_dir: ${BASE_DIR}/scalebench
+  artifact_dir: ${BASE_DIR}/mcon-artifact
 
 adb:
   start_port: 5555
