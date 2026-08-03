@@ -15,8 +15,8 @@
 set -euo pipefail
 
 # Release directory that holds SHA256SUMS and the apps.tar.part.* assets.
-RELEASE_URL="${MCON_APPS_URL:-https://github.com/VirtualSoC/mcon-docs/releases/download/binary-release}"
-
+RELEASE_URL="${MCON_APPS_URL:-https://github.com/VirtualSoC/mcon-artifact/releases/download/binary-release}"
+ 
 : "${BASE_DIR:?BASE_DIR is not set -- 'source .env' first (see README Step 1)}"
 
 REPO_ROOT="$(realpath -m "$(dirname "${BASH_SOURCE[0]}")/..")"

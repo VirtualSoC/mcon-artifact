@@ -47,6 +47,7 @@ class MConDriver(Driver):
             self.env.setdefault("GUEST_IMG_PATH", str(vsoc))
         self.env.setdefault("MONITOR_PORT", str(cfg.get("adb.monitor_port", 55555)))
         self.env.setdefault("BRIDGE_PORT", str(cfg.get("adb.bridge_port", 5555)))
+        self.env.setdefault("ADB_TARGET", self.adb_target)
         self.env.setdefault("LAUNCHER_TIMEOUT", str(cfg.get("mcon.launcher_timeout_s", 600)))
         self.env.setdefault(
             "LAUNCHER_PROCESS",

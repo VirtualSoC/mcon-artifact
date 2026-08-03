@@ -177,7 +177,7 @@ class Config:
         userdata_img = Path(os.environ.get("USERDATA_IMG", str(vsoc_img_path / "userdata.qcow2")))
         userdata_bkp = Path(os.environ.get("USERDATA_BKP", str(vsoc_img_path / "userdata_bkp.qcow2")))
         bridge_port = to_int(os.environ.get("BRIDGE_PORT"), 5_555)
-        adb_target = os.environ.get("ADB_TARGET", "localhost:5555")
+        adb_target = os.environ.get("ADB_TARGET", f"localhost:{bridge_port}")
         launcher_process = os.environ.get("LAUNCHER_PROCESS", "com.android.launcher3")
         launcher_timeout = to_int(os.environ.get("LAUNCHER_TIMEOUT"), 600)
         adb_connect_timeout = float(os.environ.get("ADB_CONNECT_TIMEOUT", "1.0"))
@@ -285,6 +285,7 @@ def start_instance(cfg: Config, display_count: int) -> None:
         # loads Mesa's software GL stack (libgbm's dri backend -> libgallium + libLLVM,
         # plus libEGL_mesa) on top of the NVIDIA driver that actually renders.
         qemu_env = os.environ.copy()
+        qemu_env.setdefault("VSOC_WORKER_PATH", str(cfg.base_dir / "bin" / "vsoc-worker"))
         nvidia_gbm = "/usr/lib/x86_64-linux-gnu/gbm/nvidia-drm_gbm.so"
         nvidia_egl = "/usr/share/glvnd/egl_vendor.d/10_nvidia.json"
         if "GBM_BACKEND" not in qemu_env and os.path.exists(nvidia_gbm):
@@ -368,7 +369,17 @@ def warm_containers(cfg: Config, count: int) -> None:
         name = f"CON-{i + 1}"
         log("INFO", f"warming container {name}")
         result = subprocess.run(
-            ["cmd", "-d", "localhost:5555", "shell", "cmd", "container", "create", name],
+            [
+                sys.executable,
+                str(ROOT_DIR / "cmd"),
+                "-d",
+                cfg.adb_target,
+                "shell",
+                "cmd",
+                "container",
+                "create",
+                name,
+            ],
             check=False,
         )
         if result.returncode == 0:

@@ -115,6 +115,7 @@ def run(cfg: Config, driver, out_dir: Path) -> Path:
     for n in densities:
         print(f"[fps] density={n} ({trials} trial(s))")
         density_ok = True
+        density_rendered = False
         for t in range(trials):
             try:
                 _prime(driver, n)
@@ -158,10 +159,14 @@ def run(cfg: Config, driver, out_dir: Path) -> Path:
                 assignments = _assign(pattern, handles, packages, r, rng)
                 per = driver.measure_fps_round(assignments, startup_s, window_s, drive, min_frames=min_frames)
                 ok = [m["fps"] for m in per.values() if m["ok"]]
+                observed_rendering = sum(
+                    int(m.get("frames") or 0) > 0 for m in per.values()
+                )
+                density_rendered = density_rendered or observed_rendering > 0
                 round_avg = mean(ok) if ok else 0.0
                 print(
                     f"[fps] N={n} trial={t} round={r}: avg={round_avg:.1f} fps "
-                    f"({len(ok)}/{len(handles)} rendering)"
+                    f"({len(ok)}/{len(handles)} qualified, {observed_rendering} observed rendering)"
                 )
                 records.append(
                     Record(
@@ -176,6 +181,7 @@ def run(cfg: Config, driver, out_dir: Path) -> Path:
                             "pattern": pattern,
                             "tenants": len(handles),
                             "rendering": len(ok),
+                            "observed_rendering": observed_rendering,
                             "apps": len(packages),
                             "window_s": window_s,
                             "per_tenant_fps": {
@@ -191,7 +197,7 @@ def run(cfg: Config, driver, out_dir: Path) -> Path:
         # Persist after every density so a later crash cannot discard completed
         # data (the CSV is rewritten in full each time; cheap at this scale).
         write_records(out_csv, records)
-        if density_ok:
+        if density_ok and density_rendered:
             max_density = n
         elif autoscale:
             print(f"[fps] density {n} failed; stopping sweep (max_density={max_density})")
